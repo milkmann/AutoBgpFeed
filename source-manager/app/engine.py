@@ -237,21 +237,47 @@ def universal_inspect(query):
         asn_raw = geo_data.get("as", f"AS{asn_num}")
         is_cf = asn_num == "13335" or "cloudflare" in geo_data.get("isp", "").lower()
         
+        # Calculate total IPs and prefix details
+        total_ips = 0
+        prefix_details = []
+        for p in prefixes:
+            try:
+                net = ipaddress.IPv4Network(p)
+                total_ips += net.num_addresses
+                prefix_details.append({
+                    "prefix": p,
+                    "addresses": f"{net.num_addresses:,} IP",
+                    "mask": f"/{net.prefixlen}"
+                })
+            except Exception:
+                pass
+
         return {
             "target": f"AS{asn_num}",
             "is_ip": False,
             "is_asn": True,
             "resolved_ips": prefixes,
+            "prefix_details": prefix_details,
+            "total_ips": total_ips,
+            "total_ips_formatted": f"{total_ips:,}",
             "primary_ip": primary_ip,
             "country": geo_data.get("country", "Международная сеть"),
             "country_code": geo_data.get("countryCode", "GL"),
             "provider": geo_data.get("isp", geo_data.get("org", f"AS{asn_num} Network")),
             "asn": f"AS{asn_num}",
+            "asn_digits": asn_num,
             "asn_full": asn_raw,
             "asn_prefix_count": len(prefixes),
             "is_cdn": is_cf,
             "is_cloudflare": is_cf,
-            "in_ru_feed": check_ip_in_feed(primary_ip).get("found", False)
+            "in_ru_feed": check_ip_in_feed(primary_ip).get("found", False),
+            "external_links": {
+                "he": f"https://bgp.he.net/AS{asn_num}",
+                "ripe": f"https://stat.ripe.net/AS{asn_num}",
+                "ipinfo": f"https://ipinfo.io/AS{asn_num}",
+                "qrator": f"https://radar.qrator.net/as{asn_num}",
+                "peeringdb": f"https://www.peeringdb.com/asn/{asn_num}"
+            }
         }
 
     # Check if query is IPv4
@@ -308,6 +334,16 @@ def universal_inspect(query):
             asn_prefix_count = len(fetch_asn(asn_digits))
         except Exception:
             pass
+
+    external_links = {}
+    if asn_digits:
+        external_links = {
+            "he": f"https://bgp.he.net/AS{asn_digits}",
+            "ripe": f"https://stat.ripe.net/AS{asn_digits}",
+            "ipinfo": f"https://ipinfo.io/AS{asn_digits}",
+            "qrator": f"https://radar.qrator.net/as{asn_digits}",
+            "peeringdb": f"https://www.peeringdb.com/asn/{asn_digits}"
+        }
             
     return {
         "target": query,
@@ -319,11 +355,13 @@ def universal_inspect(query):
         "country_code": geo_data.get("countryCode", "UN"),
         "provider": geo_data.get("isp", geo_data.get("org", "—")),
         "asn": asn_str,
+        "asn_digits": asn_digits,
         "asn_full": asn_raw,
         "asn_prefix_count": asn_prefix_count,
         "is_cdn": is_cdn,
         "is_cloudflare": is_cf,
-        "in_ru_feed": in_ru_feed
+        "in_ru_feed": in_ru_feed,
+        "external_links": external_links
     }
 
 def fetch_external_url(url):
