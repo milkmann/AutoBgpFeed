@@ -463,16 +463,17 @@
         <!-- Smart Add Box -->
         <div class="card-custom p-4 mb-4">
           <h5 class="fw-bold text-white mb-2"><i class="bi bi-lightning-charge-fill text-warning"></i> Smart Add (Быстрое добавление)</h5>
-          <p class="text-secondary small mb-3">Добавляйте любые домены, целые автономные системы (ASN), отдельные IP-диапазоны или внешние списки.</p>
+          <p class="text-secondary small mb-3">Добавляйте любые страны (UA, PL, KZ, US), домены, автономные системы (ASN), отдельные IP-диапазоны или внешние списки.</p>
           <form action="/api/sources/add" method="post" class="row g-3">
             <div class="col-md-3">
               <label class="form-label text-secondary small fw-semibold">1. Название / Метка</label>
-              <input type="text" name="name" id="add-form-name" class="form-control" placeholder="Например: YouTube, Rutracker..." required>
+              <input type="text" name="name" id="add-form-name" class="form-control" placeholder="Например: Украина, YouTube, Rutracker...">
             </div>
             <div class="col-md-3">
               <label class="form-label text-secondary small fw-semibold">2. Тип источника</label>
-              <select name="source_type" id="add-form-type" class="form-select">
-                <option value="DOMAIN">DOMAIN (Авто-DNS A-записи)</option>
+              <select name="source_type" id="add-form-type" class="form-select" onchange="updateFormPlaceholders()">
+                <option value="COUNTRY">COUNTRY (Вся страна целиком: UA, PL, KZ, US...)</option>
+                <option value="DOMAIN" selected>DOMAIN (Авто-DNS A-записи)</option>
                 <option value="ASN">ASN (Все префиксы автономной системы)</option>
                 <option value="PREFIX">IP / CIDR (Ручная подсеть)</option>
                 <option value="EXTERNAL_URL">URL (Внешний TXT список CIDR)</option>
@@ -480,7 +481,7 @@
             </div>
             <div class="col-md-4">
               <label class="form-label text-secondary small fw-semibold">3. Значение</label>
-              <input type="text" name="value" id="add-form-val" class="form-control" placeholder="rutracker.org, AS15169, 1.2.3.0/24..." required>
+              <input type="text" name="value" id="add-form-val" class="form-control" placeholder="Украина / UA, rutracker.org, AS15169..." required>
             </div>
             <div class="col-md-2 d-flex align-items-end">
               <button type="submit" class="btn btn-primary w-100 fw-semibold py-2"><i class="bi bi-plus-lg"></i> Добавить</button>
@@ -537,7 +538,7 @@
                         {% if s.enabled %}Откл{% else %}Вкл{% endif %}
                       </button>
                     </form>
-                    {% if s.type != "COUNTRY" %}
+                    {% if s.type != "COUNTRY" or s.value != "RU" %}
                     <form action="/api/sources/{{ s.id }}/delete" method="post" class="d-inline ms-1">
                       <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2">✕</button>
                     </form>
@@ -609,12 +610,12 @@
           <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
               <h5 class="fw-bold text-white mb-1"><i class="bi bi-radar text-info"></i> Универсальный сетевой инспектор & Разведка</h5>
-              <div class="text-secondary small">Введите любой сайт, IP или номер ASN (например AS62041): система мгновенно определит его подсети, провайдера, страну и предоставит ссылки на независимые BGP-агрегаторы.</div>
+              <div class="text-secondary small">Введите любой сайт, страну (Украина, UA, PL), IP или номер ASN: система мгновенно определит его подсети, провайдера, страну и предоставит ссылки на независимые BGP-агрегаторы.</div>
             </div>
           </div>
 
           <div class="input-group mb-4">
-            <input type="text" id="inspector-input" class="form-control form-control-lg" placeholder="Введите домен, IP или ASN (например: AS62041, 2ip.ua, rutracker.org, 1.1.1.1)..." onkeypress="if(event.key===\x27Enter\x27) runInspector()">
+            <input type="text" id="inspector-input" class="form-control form-control-lg" placeholder="Введите домен, страну, IP или ASN (например: Украина, AS62041, 2ip.ua, 1.1.1.1)..." onkeypress="if(event.key===\x27Enter\x27) runInspector()">
             <button class="btn btn-primary px-4 fw-bold" onclick="runInspector()"><i class="bi bi-search"></i> Анализировать</button>
           </div>
 
@@ -656,7 +657,7 @@
               </div>
               <div class="col-md-4">
                 <div class="p-3 bg-dark bg-opacity-50 rounded border border-secondary border-opacity-25 h-100">
-                  <div class="text-secondary small mb-1"><i class="bi bi-diagram-2 text-warning"></i> Автономная система (ASN)</div>
+                  <div class="text-secondary small mb-1"><i class="bi bi-diagram-2 text-warning"></i> Автономная система (ASN) / Код</div>
                   <div class="fw-bold text-warning fs-5" id="res-asn">—</div>
                   <div class="text-muted small" id="res-asn-detail"></div>
                 </div>
@@ -781,6 +782,28 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
       });
     });
 
+    function updateFormPlaceholders() {
+      const type = document.getElementById("add-form-type").value;
+      const valInput = document.getElementById("add-form-val");
+      const nameInput = document.getElementById("add-form-name");
+      if (type === "COUNTRY") {
+        valInput.placeholder = "Украина, UA, Польша, PL, KZ, US...";
+        nameInput.placeholder = "Например: Украина (UA)";
+      } else if (type === "DOMAIN") {
+        valInput.placeholder = "rutracker.org, youtube.com, t.me...";
+        nameInput.placeholder = "Например: Rutracker";
+      } else if (type === "ASN") {
+        valInput.placeholder = "AS62041, AS15169, 32934...";
+        nameInput.placeholder = "Например: Telegram";
+      } else if (type === "PREFIX") {
+        valInput.placeholder = "1.1.1.1, 185.199.108.0/22...";
+        nameInput.placeholder = "Например: Cloudflare DNS";
+      } else {
+        valInput.placeholder = "https://example.com/subnets.txt";
+        nameInput.placeholder = "Например: Community List";
+      }
+    }
+
     // Auto Countdown Timer (15 minutes)
     let secondsLeft = 900;
     setInterval(() => {
@@ -853,7 +876,11 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
         if (stats) stats.innerText = `Найдено ${data.total.toLocaleString()} маршрутов (показаны первые 50)`;
         tbody.innerHTML = data.items.map(item => {
           const isCustom = item.type.includes("Custom");
-          const badgeClass = isCustom ? "badge-custom-hl" : "badge-ru";
+          const isCountry = item.type.includes("Pool") && !item.type.includes("RU");
+          let badgeClass = "badge-ru";
+          if (isCustom) badgeClass = "badge-custom-hl";
+          if (isCountry) badgeClass = "badge-domain";
+          
           return `
             <tr>
               <td><code class="fw-bold ${isCustom ? "text-warning" : "text-info"}">${item.prefix}</code></td>
@@ -921,13 +948,23 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
         document.getElementById("res-country").innerText = data.country;
         document.getElementById("res-country-code").innerText = `Код: ${data.country_code} • ${data.in_ru_feed ? "В российском пуле" : "Зарубежный сегмент"}`;
         document.getElementById("res-provider").innerText = data.provider;
-        document.getElementById("res-isp-detail").innerText = data.is_cdn ? "CDN / Reverse-Proxy сеть" : "Прямой выделенный хостинг";
+        document.getElementById("res-isp-detail").innerText = data.is_cdn ? "CDN / Reverse-Proxy сеть" : (data.is_country ? "Национальный реестр подсетей" : "Прямой выделенный хостинг");
         document.getElementById("res-asn").innerText = data.asn || "—";
         document.getElementById("res-asn-detail").innerText = data.asn_full ? `${data.asn_full}` : "";
         
         // Alert banner
         const alertBox = document.getElementById("res-cdn-alert");
-        if (data.is_cloudflare) {
+        if (data.is_country) {
+          alertBox.innerHTML = `
+            <div class="alert alert-primary border-primary bg-opacity-10 d-flex align-items-center gap-2 mb-0 py-2">
+              <i class="bi bi-globe fs-4 text-primary"></i>
+              <div>
+                <strong>Национальный пул IP-адресов страны:</strong> Найдено <b>${data.asn_prefix_count.toLocaleString()}</b> подсетей (всего ${data.total_ips_formatted} IP).
+                <span class="text-light">Вы можете добавить всю страну в BGP-маршрутизацию в 1 клик!</span>
+              </div>
+            </div>
+          `;
+        } else if (data.is_cloudflare) {
           alertBox.innerHTML = `
             <div class="alert alert-warning border-warning bg-opacity-10 d-flex align-items-center gap-2 mb-0 py-2">
               <i class="bi bi-exclamation-triangle-fill fs-4 text-warning"></i>
@@ -956,8 +993,13 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
         // Render Action Buttons
         const actBox = document.getElementById("res-actions");
         let htmlBtns = "";
-        if (data.is_asn) {
+        if (data.is_country) {
+          htmlBtns += `<button class="btn btn-primary btn-sm fw-semibold" onclick="quickAddSource(\x27${data.country}\x27, \x27COUNTRY\x27, \x27${data.country_code}\x27)"><i class="bi bi-globe"></i> Добавить всю ${data.country_code} (${data.asn_prefix_count} сетей)</button>`;
+        } else if (data.is_asn) {
           htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.target}\x27, \x27ASN\x27, \x27${data.target}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.target}</button>`;
+          if (data.country_code && data.country_code !== "UN" && data.country_code !== "GL") {
+            htmlBtns += `<button class="btn btn-outline-primary btn-sm fw-semibold" onclick="quickAddSource(\x27${data.country}\x27, \x27COUNTRY\x27, \x27${data.country_code}\x27)"><i class="bi bi-globe"></i> Вся страна (${data.country_code})</button>`;
+          }
         } else {
           if (!data.is_ip) {
             htmlBtns += `<button class="btn btn-success btn-sm fw-semibold" onclick="quickAddSource(\x27${data.target}\x27, \x27DOMAIN\x27, \x27${data.target}\x27)"><i class="bi bi-plus-lg"></i> Добавить как DOMAIN</button>`;
@@ -965,11 +1007,14 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
           if (data.asn && !data.is_cloudflare) {
             htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.asn}\x27, \x27ASN\x27, \x27${data.asn}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.asn}</button>`;
           }
+          if (data.country_code && data.country_code !== "UN") {
+            htmlBtns += `<button class="btn btn-outline-primary btn-sm fw-semibold" onclick="quickAddSource(\x27${data.country}\x27, \x27COUNTRY\x27, \x27${data.country_code}\x27)"><i class="bi bi-globe"></i> Вся страна (${data.country_code})</button>`;
+          }
         }
         actBox.innerHTML = htmlBtns;
         
         // Render IP / Subnet Tags
-        const countLabel = data.is_asn 
+        const countLabel = (data.is_asn || data.is_country)
           ? `${data.resolved_ips.length} подсетей (${data.total_ips_formatted || 0} IPv4)` 
           : `${data.resolved_ips.length} IP`;
         document.getElementById("res-ip-count").innerText = countLabel;
@@ -1005,21 +1050,26 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
               <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">100% официальные BGP-анонсы</span>
             </div>
             <div class="d-flex flex-wrap gap-2">
+              ${data.external_links.he ? `
               <a href="${data.external_links.he}" target="_blank" class="btn btn-sm btn-outline-info text-decoration-none">
                 <i class="bi bi-hurricane"></i> Hurricane Electric (bgp.he.net)
-              </a>
-              <a href="${data.external_links.bgpview}" target="_blank" class="btn btn-sm btn-outline-light text-decoration-none">
-                <i class="bi bi-eye"></i> BGPView.io
-              </a>
+              </a>` : ""}
+              ${data.external_links.ripe ? `
               <a href="${data.external_links.ripe}" target="_blank" class="btn btn-sm btn-outline-warning text-decoration-none">
-                <i class="bi bi-globe2"></i> RIPEstat NCC (Европейский RIR)
-              </a>
+                <i class="bi bi-globe2"></i> RIPE NCC (stat.ripe.net)
+              </a>` : ""}
+              ${data.external_links.ipinfo ? `
+              <a href="${data.external_links.ipinfo}" target="_blank" class="btn btn-sm btn-outline-light text-decoration-none">
+                <i class="bi bi-info-circle"></i> IPinfo.io
+              </a>` : ""}
+              ${data.external_links.qrator ? `
               <a href="${data.external_links.qrator}" target="_blank" class="btn btn-sm btn-outline-success text-decoration-none">
                 <i class="bi bi-shield-check"></i> Radar Qrator
-              </a>
+              </a>` : ""}
+              ${data.external_links.peeringdb ? `
               <a href="${data.external_links.peeringdb}" target="_blank" class="btn btn-sm btn-outline-secondary text-decoration-none">
                 <i class="bi bi-diagram-3"></i> PeeringDB
-              </a>
+              </a>` : ""}
             </div>
           `;
           linksBox.classList.remove("d-none");
