@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auto BGP Feed</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-dark: #070d18;
+      --card-bg: #0f1a2e;
+      --card-border: #1e2e4a;
+      --accent-cyan: #00d2ff;
+      --accent-green: #10b981;
+      --accent-orange: #f59e0b;
+      --text-bright: #ffffff;
+      --text-muted-clean: #94a3b8;
+    }
+    body {
+      background-color: var(--bg-dark) !important;
+      color: var(--text-bright) !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    .sidebar {
+      background-color: #0b1424;
+      border-right: 1px solid var(--card-border);
+      min-height: 100vh;
+      width: 260px;
+    }
+    .nav-link-custom {
+      color: #94a3b8;
+      padding: 12px 18px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+    .nav-link-custom:hover {
+      color: #ffffff;
+      background-color: rgba(0, 210, 255, 0.08);
+    }
+    .nav-link-custom.active {
+      color: #00d2ff;
+      background-color: rgba(0, 210, 255, 0.15);
+      border-left: 3px solid #00d2ff;
+    }
+    .card-custom {
+      background-color: var(--card-bg) !important;
+      border: 1px solid var(--card-border) !important;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    }
+    .stat-box {
+      background: linear-gradient(145deg, #0e1b30, #13243f);
+      border: 1px solid #1e3354;
+      border-radius: 10px;
+      padding: 16px 20px;
+    }
+    .stat-box .title {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .stat-box .value {
+      font-size: 1.9rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-top: 4px;
+    }
+    .stat-box .value.green { color: #10b981; }
+    .stat-box .value.cyan { color: #00d2ff; }
+    .btn-action-custom {
+      background-color: #13233c;
+      border: 1px solid #233a60;
+      color: #f1f5f9;
+      font-weight: 500;
+      padding: 8px 16px;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .btn-action-custom:hover {
+      background-color: #1c3357;
+      border-color: #00d2ff;
+      color: #00d2ff;
+    }
+    .pipeline-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      background-color: #0b1526;
+      border: 1px solid #1c2e4c;
+      border-radius: 12px;
+    }
+    .pipeline-node {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background-color: #132238;
+      border: 1px solid #00d2ff;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      color: #00d2ff;
+      box-shadow: 0 0 10px rgba(0, 210, 255, 0.15);
+    }
+    .pipeline-node.green {
+      border-color: #10b981;
+      color: #10b981;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.15);
+    }
+    .pipeline-line {
+      flex-grow: 1;
+      height: 2px;
+      background: linear-gradient(90deg, #1c2e4c, #00d2ff, #1c2e4c);
+      margin: 0 8px;
+    }
+    .breakdown-box {
+      background-color: #0c172a;
+      border: 1px solid #1a2c47;
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .breakdown-step {
+      background-color: #132238;
+      border: 1px solid #203554;
+      border-radius: 8px;
+      padding: 14px;
+      text-align: center;
+      flex: 1;
+    }
+    .breakdown-step .num { font-size: 1.5rem; font-weight: 700; color: #ffffff; }
+    .breakdown-step .desc { font-size: 0.8rem; color: #94a3b8; margin-top: 4px; }
+    
+    .table {
+      --bs-table-bg: transparent !important;
+      --bs-table-color: #f8fafc !important;
+      --bs-table-border-color: #1a2c47 !important;
+      color: #f8fafc !important;
+      margin-bottom: 0;
+    }
+    .table-custom th {
+      background-color: #08111e !important;
+      color: #94a3b8 !important;
+      font-weight: 600;
+      border-bottom: 1px solid #1e2e4a !important;
+      font-size: 0.85rem;
+      padding: 14px 12px;
+    }
+    .table-custom td {
+      background-color: #0d182b !important;
+      border-bottom: 1px solid #16243a !important;
+      padding: 14px 12px;
+      font-size: 0.9rem;
+      color: #f8fafc !important;
+      vertical-align: middle;
+    }
+    .table-custom tr:hover td {
+      background-color: #13233c !important;
+    }
+    .form-control, .form-select {
+      background-color: #0a1322 !important;
+      color: #ffffff !important;
+      border: 1px solid #203554 !important;
+    }
+    .form-control:focus, .form-select:focus {
+      border-color: #00d2ff !important;
+      box-shadow: 0 0 0 0.2rem rgba(0, 210, 255, 0.2) !important;
+    }
+    .form-control::placeholder {
+      color: #64748b !important;
+    }
+    .badge-ru { background-color: rgba(59, 130, 246, 0.25); color: #60a5fa; border: 1px solid #3b82f6; font-size: 0.8rem; padding: 4px 8px; }
+    .badge-domain { background-color: rgba(16, 185, 129, 0.25); color: #34d399; border: 1px solid #10b981; font-size: 0.8rem; padding: 4px 8px; }
+    .badge-asn { background-color: rgba(245, 158, 11, 0.25); color: #fbbf24; border: 1px solid #f59e0b; font-size: 0.8rem; padding: 4px 8px; }
+    .badge-cidr { background-color: rgba(168, 85, 247, 0.25); color: #c084fc; border: 1px solid #a855f7; font-size: 0.8rem; padding: 4px 8px; }
+    .badge-custom-hl { background-color: rgba(0, 210, 255, 0.25); color: #00d2ff; border: 1px solid #00d2ff; font-weight: 600; font-size: 0.8rem; padding: 4px 8px; }
+    
+    .log-terminal {
+      background-color: #050a12;
+      border: 1px solid #162438;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.82rem;
+      max-height: 220px;
+      overflow-y: auto;
+      color: #94a3b8;
+    }
+    .log-line.SUCCESS { color: #10b981; }
+    .log-line.WARN { color: #f59e0b; }
+    .log-line.ERROR { color: #ef4444; }
+    .log-line.INFO { color: #38bdf8; }
+    .peer-card {
+      background: linear-gradient(145deg, #091322, #0f1d33);
+      border: 1px solid #1d3356;
+      border-radius: 10px;
+      padding: 18px;
+    }
+    .modal-content {
+      background-color: #0b1526 !important;
+      border: 1px solid #1e3354 !important;
+      color: #ffffff !important;
+      border-radius: 12px;
+    }
+    .intel-card {
+      background: linear-gradient(145deg, #0b1628, #11223d);
+      border: 1px solid #203554;
+      border-radius: 10px;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="d-flex">
+    <!-- Sidebar -->
+    <div class="sidebar p-3 d-flex flex-column justify-content-between">
+      <div>
+        <div class="d-flex align-items-center gap-3 px-2 py-3 mb-3 border-bottom border-secondary border-opacity-25">
+          <div style="font-size: 1.8rem; color: #00d2ff;"><i class="bi bi-shield-shaded"></i></div>
+          <div>
+            <div class="fw-bold fs-5 text-white">Auto BGP Feed</div>
+            <div class="small text-muted">Universal Router Gateway</div>
+          </div>
+        </div>
+
+        <nav class="nav flex-column">
+          <a class="nav-link-custom active" data-tab="tab-dashboard"><i class="bi bi-speedometer2"></i> Панель</a>
+          <a class="nav-link-custom" data-tab="tab-explorer"><i class="bi bi-search"></i> База маршрутов (8.6k)</a>
+          <a class="nav-link-custom" data-tab="tab-lists"><i class="bi bi-list-task"></i> Списки и Smart Add</a>
+          <a class="nav-link-custom" data-tab="tab-tools"><i class="bi bi-tools"></i> Инструменты и Разведка</a>
+          <a class="nav-link-custom" data-tab="tab-settings"><i class="bi bi-sliders"></i> Настройки</a>
+        </nav>
+      </div>
+
+      <div class="px-2 pt-3 border-top border-secondary border-opacity-25">
+        <div class="small text-muted">Пользователь:</div>
+        <div class="fw-semibold text-info">{{ current_user }}</div>
+        <div class="small text-secondary mt-1">BGP: {{ server_ip }}:179</div>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-grow-1 p-4" style="overflow-x: hidden;">
+
+      <!-- TOP BAR -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h3 class="fw-bold mb-1 text-white" id="page-title">Панель управления</h3>
+          <div class="text-secondary small">
+            Последняя генерация: <span class="text-light fw-medium">{{ stats.last_gen_time or "—" }}</span> 
+            • Время работы BGP: <span class="text-success fw-medium">Active</span>
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <form action="/api/rebuild" method="post" class="d-inline">
+            <button type="submit" class="btn btn-action-custom"><i class="bi bi-arrow-repeat"></i> Обновить маршруты</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- ================= TAB 1: DASHBOARD ================= -->
+      <div id="tab-dashboard" class="tab-content-section">
+        <!-- 4 Top Cards -->
+        <div class="row g-3 mb-4">
+          <div class="col-md-3">
+            <div class="stat-box">
+              <div class="title">Активные маршруты</div>
+              <div class="value cyan">{{ "{:,}".format(stats.final_count or 8651) }}</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-box">
+              <div class="title">BGP Клиент</div>
+              <div class="value green">
+                {% if peer_info.state == "Established" %}
+                  {{ peer_info.state }} <i class="bi bi-check-circle-fill fs-5"></i>
+                {% else %}
+                  <span class="text-warning">Ожидание клиента</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-box">
+              <div class="title">До автообновления</div>
+              <div class="value" id="countdown-timer">14:59</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-box">
+              <div class="title">Задержка (RTT)</div>
+              <div class="value text-warning">{{ peer_info.rtt_ms or "—" }} мс</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Visual Architecture Pipeline -->
+        <div class="card-custom p-4 mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="fw-bold fs-6 text-white"><i class="bi bi-diagram-3-fill text-info"></i> Сквозной конвейер маршрутизации</div>
+            <span class="badge bg-success bg-opacity-25 text-success border border-success">BGP Dynamic Pool Active</span>
+          </div>
+          <div class="pipeline-container">
+            <div class="pipeline-node"><i class="bi bi-broadcast"></i> Источники (RIPE/DNS)</div>
+            <div class="pipeline-line"></div>
+            <div class="pipeline-node"><i class="bi bi-hdd-network"></i> Кеш (Last-Good)</div>
+            <div class="pipeline-line"></div>
+            <div class="pipeline-node"><i class="bi bi-cpu"></i> Генератор (SQLite)</div>
+            <div class="pipeline-line"></div>
+            <div class="pipeline-node green"><i class="bi bi-hdd-stack"></i> BIRD 2 Core</div>
+            <div class="pipeline-line"></div>
+            <div class="pipeline-node green"><i class="bi bi-router"></i> Роутер-клиент</div>
+          </div>
+        </div>
+
+        <!-- Telemetry & Charts Row -->
+        <div class="row g-4 mb-4">
+          <div class="col-md-6">
+            <div class="peer-card h-100">
+              <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom border-secondary border-opacity-25">
+                <h6 class="fw-bold text-white mb-0"><i class="bi bi-router text-success"></i> Телеметрия подключенного роутера</h6>
+                <span class="badge bg-info bg-opacity-25 text-info">AS {{ peer_info.remote_as or 64999 }}</span>
+              </div>
+              <div class="row g-3 small">
+                <div class="col-6">
+                  <div class="text-secondary">Клиентский IP:</div>
+                  <div class="fw-bold text-white">{{ peer_info.ip or "Ожидание сессии..." }}</div>
+                </div>
+                <div class="col-6">
+                  <div class="text-secondary">Router ID:</div>
+                  <div class="fw-bold text-white">{{ peer_info.router_id or "—" }}</div>
+                </div>
+                <div class="col-6">
+                  <div class="text-secondary">Префиксов передано:</div>
+                  <div class="fw-bold text-success fs-6">{{ "{:,}".format(peer_info.sent_prefixes or 0) }} маршрутов</div>
+                </div>
+                <div class="col-6">
+                  <div class="text-secondary">BGP Uptime:</div>
+                  <div class="fw-bold text-info">{{ peer_info.uptime or "—" }}</div>
+                </div>
+                <div class="col-6">
+                  <div class="text-secondary">Keepalive статистика:</div>
+                  <div class="text-light">{{ peer_info.keepalives or "—" }}</div>
+                </div>
+                <div class="col-6">
+                  <div class="text-secondary">BGP Updates передано:</div>
+                  <div class="text-light">{{ peer_info.updates_sent or 0 }} пакетов</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chart 1: Mask Distribution -->
+          <div class="col-md-6">
+            <div class="card-custom p-3 h-100">
+              <h6 class="fw-bold text-white mb-2 small"><i class="bi bi-bar-chart-fill text-warning"></i> Распределение масок подсетей (CIDR)</h6>
+              <div style="height: 180px;">
+                <canvas id="maskChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Breakdown Box -->
+        <div class="breakdown-box mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="fw-bold text-white fs-6">Детализация генератора префиксов</div>
+            <span class="badge bg-primary bg-opacity-25 text-info border border-info">{{ stats.final_count or 8651 }} final routes</span>
+          </div>
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            <div class="breakdown-step">
+              <div class="num text-info">{{ "{:,}".format(stats.raw_count or 8651) }}</div>
+              <div class="desc">Из внешних источников</div>
+            </div>
+            <div class="fw-bold text-secondary fs-4">+</div>
+            <div class="breakdown-step">
+              <div class="num text-warning">{{ stats.custom_count or 0 }}</div>
+              <div class="desc">Добавлено доменами и ASN</div>
+            </div>
+            <div class="fw-bold text-secondary fs-4">=</div>
+            <div class="breakdown-step">
+              <div class="num text-light">{{ "{:,}".format(stats.pre_filter_count or 8651) }}</div>
+              <div class="desc">До фильтрации</div>
+            </div>
+            <div class="fw-bold text-secondary fs-4">➔</div>
+            <div class="breakdown-step">
+              <div class="num text-light">{{ "{:,}".format(stats.post_filter_count or 8651) }}</div>
+              <div class="desc">После правил исключения</div>
+            </div>
+            <div class="fw-bold text-secondary fs-4">➔</div>
+            <div class="breakdown-step" style="border-color: #10b981;">
+              <div class="num text-success">{{ "{:,}".format(stats.final_count or 8651) }}</div>
+              <div class="desc">Итоговые активные маршруты</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Operations Log -->
+        <div class="card-custom p-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="fw-bold text-white small"><i class="bi bi-terminal text-info"></i> Лог последних операций генератора</div>
+            <button class="btn btn-sm text-secondary p-0" onclick="refreshLogs()"><i class="bi bi-arrow-clockwise"></i> Обновить лог</button>
+          </div>
+          <div class="log-terminal" id="log-console">
+            {% for l in logs %}
+              <div class="log-line {{ l.level }}">[{{ l.timestamp }}] [{{ l.level }}] {{ l.message }}</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= TAB 2: ROUTE EXPLORER ================= -->
+      <div id="tab-explorer" class="tab-content-section d-none">
+        <div class="card-custom p-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+              <h5 class="fw-bold text-white mb-1"><i class="bi bi-search text-info"></i> Интерактивная база маршрутов</h5>
+              <div class="text-secondary small">Мгновенный поиск по всем подсетям (пользовательские домены выводятся в начале списка).</div>
+            </div>
+            <div class="w-50">
+              <input type="text" id="route-search-input" class="form-control" placeholder="Поиск по IP, подсети или типу (например: 188.114, Custom, 77.88)..." oninput="debounceRouteSearch()">
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-custom align-middle" id="route-explorer-table">
+              <thead>
+                <tr>
+                  <th>Префикс (CIDR)</th>
+                  <th>Кол-во адресов (IP)</th>
+                  <th>Категория / Источник</th>
+                  <th>BGP Community</th>
+                  <th>Шлюз MikroTik</th>
+                </tr>
+              </thead>
+              <tbody id="route-explorer-body">
+                <tr><td colspan="5" class="text-center text-secondary py-4">Загрузка маршрутов...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mt-3 text-secondary small">
+            <span id="route-search-stats">Показаны первые 50 маршрутов</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= TAB 3: LISTS & SMART ADD ================= -->
+      <div id="tab-lists" class="tab-content-section d-none">
+        <!-- Smart Add Box -->
+        <div class="card-custom p-4 mb-4">
+          <h5 class="fw-bold text-white mb-2"><i class="bi bi-lightning-charge-fill text-warning"></i> Smart Add (Быстрое добавление)</h5>
+          <p class="text-secondary small mb-3">Добавляйте любые домены, целые автономные системы (ASN), отдельные IP-диапазоны или внешние списки.</p>
+          <form action="/api/sources/add" method="post" class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label text-secondary small fw-semibold">1. Название / Метка</label>
+              <input type="text" name="name" id="add-form-name" class="form-control" placeholder="Например: YouTube, Rutracker..." required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label text-secondary small fw-semibold">2. Тип источника</label>
+              <select name="source_type" id="add-form-type" class="form-select">
+                <option value="DOMAIN">DOMAIN (Авто-DNS A-записи)</option>
+                <option value="ASN">ASN (Все префиксы автономной системы)</option>
+                <option value="PREFIX">IP / CIDR (Ручная подсеть)</option>
+                <option value="EXTERNAL_URL">URL (Внешний TXT список CIDR)</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label text-secondary small fw-semibold">3. Значение</label>
+              <input type="text" name="value" id="add-form-val" class="form-control" placeholder="rutracker.org, AS15169, 1.2.3.0/24..." required>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+              <button type="submit" class="btn btn-primary w-100 fw-semibold py-2"><i class="bi bi-plus-lg"></i> Добавить</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Sources Table -->
+        <div class="card-custom p-4 mb-4" id="sources">
+          <h5 class="fw-bold text-white mb-3"><i class="bi bi-folder2-open text-info"></i> Активные источники маршрутов</h5>
+          <div class="table-responsive">
+            <table class="table table-custom align-middle">
+              <thead>
+                <tr>
+                  <th style="width: 50px;">#</th>
+                  <th>Название</th>
+                  <th>Тип</th>
+                  <th>Значение</th>
+                  <th>Сгенерировано префиксов</th>
+                  <th>Community</th>
+                  <th>Обновлено</th>
+                  <th>Статус</th>
+                  <th class="text-end">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for s in sources %}
+                <tr>
+                  <td class="fw-bold text-secondary">{{ loop.index }}</td>
+                  <td class="fw-semibold text-white">{{ s.name }}</td>
+                  <td>
+                    <span class="badge {% if s.type == "COUNTRY" %}badge-ru{% elif s.type == "DOMAIN" %}badge-domain{% elif s.type == "ASN" %}badge-asn{% else %}badge-cidr{% endif %}">
+                      {{ s.type }}
+                    </span>
+                  </td>
+                  <td><code class="text-info fw-bold">{{ s.value }}</code></td>
+                  <td>
+                    <button class="btn btn-sm btn-outline-info py-0 px-2 fw-semibold" onclick="inspectSourcePrefixes({{ s.id }}, \x27{{ s.name }}\x27)">
+                      <i class="bi bi-eye"></i> {{ "{:,}".format(s.prefix_count) }} префиксов
+                    </button>
+                  </td>
+                  <td><code class="text-secondary">{{ s.community }}</code></td>
+                  <td><small class="text-secondary">{{ s.last_update or "В обработке" }}</small></td>
+                  <td>
+                    {% if s.enabled %}
+                      <span class="badge bg-success bg-opacity-25 text-success border border-success">Активен</span>
+                    {% else %}
+                      <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary">Отключен</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-end">
+                    <form action="/api/sources/{{ s.id }}/toggle" method="post" class="d-inline">
+                      <button type="submit" class="btn btn-sm btn-outline-warning py-1 px-3">
+                        {% if s.enabled %}Откл{% else %}Вкл{% endif %}
+                      </button>
+                    </form>
+                    {% if s.type != "COUNTRY" %}
+                    <form action="/api/sources/{{ s.id }}/delete" method="post" class="d-inline ms-1">
+                      <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2">✕</button>
+                    </form>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Exclusions Box -->
+        <div class="card-custom p-4" id="exclusions">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold text-white mb-0"><i class="bi bi-slash-circle text-danger"></i> Правила исключения (Exclusions)</h5>
+          </div>
+          <form action="/api/exclusions/add" method="post" class="row g-2 mb-3">
+            <div class="col-md-4">
+              <input type="text" name="name" class="form-control form-control-sm" placeholder="Название исключения" required>
+            </div>
+            <div class="col-md-6">
+              <input type="text" name="value" class="form-control form-control-sm" placeholder="IP или подсеть (например, 1.2.3.4 или 1.2.3.0/24)" required>
+            </div>
+            <div class="col-md-2">
+              <button type="submit" class="btn btn-sm btn-outline-danger w-100">+ Исключить</button>
+            </div>
+          </form>
+
+          {% if exclusions %}
+          <div class="table-responsive">
+            <table class="table table-custom align-middle">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Название</th>
+                  <th>Исключаемая сеть / IP</th>
+                  <th>Добавлено</th>
+                  <th class="text-end">Удалить</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for ex in exclusions %}
+                <tr>
+                  <td>{{ ex.id }}</td>
+                  <td>{{ ex.name }}</td>
+                  <td><code>{{ ex.value }}</code></td>
+                  <td><small class="text-muted">{{ ex.created_at }}</small></td>
+                  <td class="text-end">
+                    <form action="/api/exclusions/{{ ex.id }}/delete" method="post" class="d-inline">
+                      <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">✕</button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+            <div class="text-secondary small">Нет активных правил исключения. Все префиксы транслируются без вырезания.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- ================= TAB 4: TOOLS & INTELLIGENCE ================= -->
+      <div id="tab-tools" class="tab-content-section d-none">
+        <!-- Main Inspector Tool -->
+        <div class="card-custom p-4 mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+              <h5 class="fw-bold text-white mb-1"><i class="bi bi-radar text-info"></i> Универсальный сетевой инспектор & Разведка</h5>
+              <div class="text-secondary small">Введите любой сайт или IP: система мгновенно определит его провайдера, ASN, страну, проверит наличие Cloudflare/CDN и подскажет, как лучше добавить.</div>
+            </div>
+          </div>
+
+          <div class="input-group mb-4">
+            <input type="text" id="inspector-input" class="form-control form-control-lg" placeholder="Введите домен или IP (например: 2ip.ua, rutracker.org, t.me, 1.1.1.1)..." onkeypress="if(event.key===\x27Enter\x27) runInspector()">
+            <button class="btn btn-primary px-4 fw-bold" onclick="runInspector()"><i class="bi bi-search"></i> Анализировать</button>
+          </div>
+
+          <!-- Loading Indicator -->
+          <div id="inspector-loading" class="text-center py-4 d-none">
+            <div class="spinner-border text-info" role="status"></div>
+            <div class="text-secondary small mt-2">Опрос глобальных DNS и реестров RIR...</div>
+          </div>
+
+          <!-- Inspector Result Card -->
+          <div id="inspector-result" class="intel-card d-none">
+            <div class="d-flex justify-content-between align-items-start mb-3 pb-3 border-bottom border-secondary border-opacity-25 flex-wrap gap-2">
+              <div>
+                <span class="text-secondary small text-uppercase fw-semibold">Исследуемый ресурс:</span>
+                <h4 class="fw-bold text-white mb-0" id="res-target">—</h4>
+              </div>
+              <div class="d-flex gap-2 align-items-center" id="res-actions">
+                <!-- Action buttons rendered via JS -->
+              </div>
+            </div>
+
+            <!-- CDN / Cloudflare Alert Banner -->
+            <div id="res-cdn-alert" class="mb-3"></div>
+
+            <div class="row g-3">
+              <div class="col-md-4">
+                <div class="p-3 bg-dark bg-opacity-50 rounded border border-secondary border-opacity-25 h-100">
+                  <div class="text-secondary small mb-1"><i class="bi bi-geo-alt-fill text-danger"></i> Локация и Страна</div>
+                  <div class="fw-bold text-white fs-5" id="res-country">—</div>
+                  <div class="text-muted small" id="res-country-code"></div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="p-3 bg-dark bg-opacity-50 rounded border border-secondary border-opacity-25 h-100">
+                  <div class="text-secondary small mb-1"><i class="bi bi-buildings text-info"></i> Провайдер / Владелец</div>
+                  <div class="fw-bold text-white fs-5" id="res-provider">—</div>
+                  <div class="text-muted small" id="res-isp-detail"></div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="p-3 bg-dark bg-opacity-50 rounded border border-secondary border-opacity-25 h-100">
+                  <div class="text-secondary small mb-1"><i class="bi bi-diagram-2 text-warning"></i> Автономная система (ASN)</div>
+                  <div class="fw-bold text-warning fs-5" id="res-asn">—</div>
+                  <div class="text-muted small" id="res-asn-detail"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Resolved IP list -->
+            <div class="mt-3 p-3 bg-black rounded border border-secondary border-opacity-25">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="small fw-semibold text-secondary"><i class="bi bi-hdd-network text-success"></i> Найденные IPv4-адреса хоста:</div>
+                <span class="badge bg-secondary bg-opacity-25 text-light" id="res-ip-count">0 IP</span>
+              </div>
+              <div class="d-flex flex-wrap gap-2" id="res-ip-tags"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Russian Feed Fast Checker -->
+        <div class="card-custom p-4">
+          <h5 class="fw-bold text-white mb-2"><i class="bi bi-check2-circle text-success"></i> Быстрая проверка IP в российском фиде</h5>
+          <p class="text-secondary small">Проверьте, входит ли IP-адрес в активную таблицу маршрутизации РФ.</p>
+          <div class="input-group mb-3">
+            <input type="text" id="tool-ip-val" class="form-control" placeholder="Например: 77.88.55.66">
+            <button class="btn btn-info fw-semibold px-3" onclick="checkIpTool()">Проверить IP</button>
+          </div>
+          <div id="tool-ip-res" class="p-3 bg-black rounded d-none small"></div>
+        </div>
+      </div>
+
+      <!-- ================= TAB 5: SETTINGS ================= -->
+      <div id="tab-settings" class="tab-content-section d-none">
+        <div class="card-custom p-4 mb-4">
+          <h5 class="fw-bold text-white mb-3"><i class="bi bi-router-fill text-info"></i> Конфигурация для MikroTik (RouterOS 7)</h5>
+          <p class="text-secondary small">Скопируйте эту команду и выполните в терминале MikroTik, чтобы подключиться к BGP-узлу:</p>
+          <pre class="bg-black p-3 rounded text-info mb-0" style="font-size: 0.9rem;"><code>/routing/bgp/connection
+add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ server_asn }} \
+    as=64999 local.role=ebgp multihop=yes connect=yes listen=no \
+    routing-table=main input.filter=antifilter-in output.filter-chain=discard</code></pre>
+        </div>
+
+        <div class="card-custom p-4">
+          <h5 class="fw-bold text-white mb-3"><i class="bi bi-info-circle text-warning"></i> Параметры BGP-сервера</h5>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="p-3 bg-dark rounded">
+                <div class="text-secondary small">BGP Server IP</div>
+                <div class="fw-bold text-white fs-5">{{ server_ip }}</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="p-3 bg-dark rounded">
+                <div class="text-secondary small">Server ASN</div>
+                <div class="fw-bold text-white fs-5">{{ server_asn }}</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="p-3 bg-dark rounded">
+                <div class="text-secondary small">Port & Protocol</div>
+                <div class="fw-bold text-white fs-5">179 (TCP / eBGP)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal for Inspecting Prefixes of a Source -->
+  <div class="modal fade" id="sourcePrefixModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <div class="modal-header border-secondary border-opacity-25">
+          <h5 class="modal-title fw-bold text-info" id="prefixModalTitle">Префиксы источника</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3 text-secondary small" id="prefixModalDesc">Список подсетей, сгенерированных для этого источника и переданных клиентам:</div>
+          <div class="bg-black p-3 rounded" style="max-height: 350px; overflow-y: auto;">
+            <div id="prefixModalList" class="d-flex flex-wrap gap-2"></div>
+          </div>
+        </div>
+        <div class="modal-footer border-secondary border-opacity-25">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Tab Switching
+    document.addEventListener("DOMContentLoaded", () => {
+      document.querySelectorAll(".nav-link-custom").forEach(link => {
+        link.addEventListener("click", function(e) {
+          e.preventDefault();
+          const targetTab = this.getAttribute("data-tab");
+          if (!targetTab) return;
+          
+          document.querySelectorAll(".tab-content-section").forEach(t => t.classList.add("d-none"));
+          document.querySelectorAll(".nav-link-custom").forEach(l => l.classList.remove("active"));
+          
+          const section = document.getElementById(targetTab);
+          if (section) {
+            section.classList.remove("d-none");
+            this.classList.add("active");
+          }
+          
+          const titles = {
+            "tab-dashboard": "Панель управления",
+            "tab-explorer": "Интерактивная база маршрутов",
+            "tab-lists": "Управление списками и Smart Add",
+            "tab-tools": "Инструменты и Разведка",
+            "tab-settings": "Настройки подключения и BGP"
+          };
+          document.getElementById("page-title").innerText = titles[targetTab] || "Панель";
+          
+          if (targetTab === "tab-explorer") {
+            fetchRoutes("");
+          }
+        });
+      });
+    });
+
+    // Auto Countdown Timer (15 minutes)
+    let secondsLeft = 900;
+    setInterval(() => {
+      secondsLeft--;
+      if (secondsLeft <= 0) secondsLeft = 900;
+      const m = Math.floor(secondsLeft / 60).toString().padStart(2, "0");
+      const s = (secondsLeft % 60).toString().padStart(2, "0");
+      const timerEl = document.getElementById("countdown-timer");
+      if (timerEl) timerEl.innerText = `${m}:${s}`;
+    }, 1000);
+
+    // Render Mask Distribution Bar Chart
+    try {
+      const chartEl = document.getElementById("maskChart");
+      if (chartEl) {
+        const ctx = chartEl.getContext("2d");
+        new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: ["/8 - /16 (Крупные)", "/17 - /20 (Средние)", "/21 - /24 (Локальные)", "/32 (Хосты)"],
+            datasets: [{
+              label: "Количество подсетей",
+              data: [{{ mask_dist["/8 - /16 (Крупные)"] or 0 }}, {{ mask_dist["/17 - /20 (Средние)"] or 0 }}, {{ mask_dist["/21 - /24 (Локальные)"] or 0 }}, {{ mask_dist["/32 (Хосты/DNS)"] or 0 }}],
+              backgroundColor: ["#00d2ff", "#10b981", "#f59e0b", "#a855f7"],
+              borderRadius: 6
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { display: false } },
+              y: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "#1e2e4a" } }
+            }
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("Chart init error:", err);
+    }
+
+    // Debounced Route Explorer Search
+    let searchTimeout = null;
+    function debounceRouteSearch() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        const input = document.getElementById("route-search-input");
+        const q = input ? input.value : "";
+        fetchRoutes(q);
+      }, 300);
+    }
+
+    async function fetchRoutes(query) {
+      const tbody = document.getElementById("route-explorer-body");
+      const stats = document.getElementById("route-search-stats");
+      if (!tbody) return;
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary py-3">Поиск...</td></tr>`;
+      
+      try {
+        const res = await fetch(`/api/routes?q=${encodeURIComponent(query)}&limit=50`);
+        const data = await res.json();
+        
+        if (!data.items || data.items.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" class="text-center text-warning py-3">Ничего не найдено</td></tr>`;
+          if (stats) stats.innerText = `Найдено 0 совпадений`;
+          return;
+        }
+        
+        if (stats) stats.innerText = `Найдено ${data.total.toLocaleString()} маршрутов (показаны первые 50)`;
+        tbody.innerHTML = data.items.map(item => {
+          const isCustom = item.type.includes("Custom");
+          const badgeClass = isCustom ? "badge-custom-hl" : "badge-ru";
+          return `
+            <tr>
+              <td><code class="fw-bold ${isCustom ? "text-warning" : "text-info"}">${item.prefix}</code></td>
+              <td class="text-light">${item.addresses} IP</td>
+              <td><span class="badge ${badgeClass}">${item.type}</span></td>
+              <td><code class="text-secondary">${item.community}</code></td>
+              <td><span class="badge bg-success bg-opacity-25 text-success border border-success">${item.gateway}</span></td>
+            </tr>
+          `;
+        }).join("");
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-3">Ошибка загрузки базы: ${e}</td></tr>`;
+      }
+    }
+
+    async function inspectSourcePrefixes(sourceId, name) {
+      const modalEl = new bootstrap.Modal(document.getElementById("sourcePrefixModal"));
+      document.getElementById("prefixModalTitle").innerText = `Маршруты источника: ${name}`;
+      const listEl = document.getElementById("prefixModalList");
+      listEl.innerHTML = `<span class="text-secondary">Загрузка префиксов...</span>`;
+      modalEl.show();
+      
+      try {
+        const res = await fetch(`/api/sources/${sourceId}/prefixes`);
+        const data = await res.json();
+        if (data.prefixes && data.prefixes.length > 0) {
+          listEl.innerHTML = data.prefixes.map(p => `
+            <span class="badge bg-dark text-info border border-secondary p-2 fs-6">
+              <i class="bi bi-hdd-network"></i> ${p}
+            </span>
+          `).join("");
+        } else {
+          listEl.innerHTML = `<span class="text-warning">Для этого источника префиксы ещё генерируются или отсутствуют.</span>`;
+        }
+      } catch (e) {
+        listEl.innerHTML = `<span class="text-danger">Ошибка: ${e}</span>`;
+      }
+    }
+
+    // Universal Network Inspector
+    async function runInspector() {
+      const input = document.getElementById("inspector-input");
+      if (!input || !input.value.trim()) return;
+      const target = input.value.trim();
+      
+      const loading = document.getElementById("inspector-loading");
+      const resCard = document.getElementById("inspector-result");
+      loading.classList.remove("d-none");
+      resCard.classList.add("d-none");
+      
+      const fd = new FormData();
+      fd.append("query", target);
+      try {
+        const res = await fetch("/api/tools/inspect", { method: "POST", body: fd });
+        const data = await res.json();
+        loading.classList.add("d-none");
+        
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+        
+        resCard.classList.remove("d-none");
+        document.getElementById("res-target").innerText = data.target;
+        document.getElementById("res-country").innerText = data.country;
+        document.getElementById("res-country-code").innerText = `Код: ${data.country_code} • ${data.in_ru_feed ? "В российском пуле" : "Зарубежный сегмент"}`;
+        document.getElementById("res-provider").innerText = data.provider;
+        document.getElementById("res-isp-detail").innerText = data.is_cdn ? "CDN / Reverse-Proxy сеть" : "Прямой выделенный хостинг";
+        document.getElementById("res-asn").innerText = data.asn || "—";
+        document.getElementById("res-asn-detail").innerText = data.asn_full ? `${data.asn_full}` : "";
+        
+        // Alert banner
+        const alertBox = document.getElementById("res-cdn-alert");
+        if (data.is_cloudflare) {
+          alertBox.innerHTML = `
+            <div class="alert alert-warning border-warning bg-opacity-10 d-flex align-items-center gap-2 mb-0 py-2">
+              <i class="bi bi-exclamation-triangle-fill fs-4 text-warning"></i>
+              <div>
+                <strong>Обнаружен Cloudflare CDN (${data.asn}):</strong> Этот сайт работает через плавающий Anycast-прокси. 
+                <span class="text-light">РЕКОМЕНДАЦИЯ: добавляйте этот ресурс как <b>DOMAIN</b>. Наш умный генератор вычленит только нужные ноды и не будет заворачивать лишние 10 млн сайтов.</span>
+              </div>
+            </div>
+          `;
+        } else if (data.is_cdn) {
+          alertBox.innerHTML = `
+            <div class="alert alert-info border-info bg-opacity-10 d-flex align-items-center gap-2 mb-0 py-2">
+              <i class="bi bi-info-circle-fill fs-4 text-info"></i>
+              <div><strong>CDN / Прокси-сеть:</strong> Рекомендуется добавлять как <b>DOMAIN</b> для точечной балансировки.</div>
+            </div>
+          `;
+        } else {
+          alertBox.innerHTML = `
+            <div class="alert alert-success border-success bg-opacity-10 d-flex align-items-center gap-2 mb-0 py-2">
+              <i class="bi bi-check-circle-fill fs-4 text-success"></i>
+              <div><strong>Прямой сервер:</strong> Можно безопасно добавлять как отдельный <b>DOMAIN</b> или как <b>ASN</b> (${data.asn_prefix_count ? data.asn_prefix_count + " префиксов" : "автономная система"}).</div>
+            </div>
+          `;
+        }
+        
+        // Render Action Buttons
+        const actBox = document.getElementById("res-actions");
+        let htmlBtns = "";
+        if (!data.is_ip) {
+          htmlBtns += `<button class="btn btn-success btn-sm fw-semibold" onclick="quickAddSource(\x27${data.target}\x27, \x27DOMAIN\x27, \x27${data.target}\x27)"><i class="bi bi-plus-lg"></i> Добавить как DOMAIN</button>`;
+        }
+        if (data.asn && !data.is_cloudflare) {
+          htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.asn}\x27, \x27ASN\x27, \x27${data.asn}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.asn}</button>`;
+        }
+        actBox.innerHTML = htmlBtns;
+        
+        // Render IP Tags
+        document.getElementById("res-ip-count").innerText = `${data.resolved_ips.length} IP`;
+        document.getElementById("res-ip-tags").innerHTML = data.resolved_ips.map(ip => `
+          <code class="p-2 bg-dark rounded text-info border border-secondary">${ip}</code>
+        `).join("");
+        
+      } catch (e) {
+        loading.classList.add("d-none");
+        alert("Ошибка анализа: " + e);
+      }
+    }
+
+    function quickAddSource(name, type, val) {
+      document.querySelector(\x27[data-tab="tab-lists"]\x27).click();
+      document.getElementById("add-form-name").value = name;
+      document.getElementById("add-form-type").value = type;
+      document.getElementById("add-form-val").value = val;
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    async function checkIpTool() {
+      const input = document.getElementById("tool-ip-val");
+      if (!input || !input.value) return;
+      const box = document.getElementById("tool-ip-res");
+      box.classList.remove("d-none");
+      box.innerHTML = `<span class="text-secondary">Проверка...</span>`;
+      
+      const fd = new FormData();
+      fd.append("ip", input.value);
+      try {
+        const res = await fetch("/api/tools/lookup-ip", { method: "POST", body: fd });
+        const data = await res.json();
+        if (data.error) {
+          box.innerHTML = `<span class="text-danger">${data.error}</span>`;
+        } else if (data.found) {
+          box.innerHTML = `<span class="text-success fw-bold">✓ IP ${data.ip} входит в российский фид!</span><br><span class="text-secondary">Подсеть: </span><code class="text-info">${data.matching_prefix}</code>`;
+        } else {
+          box.innerHTML = `<span class="text-warning">⚠ IP ${data.ip} не найден в российском фиде (зарубежный IP).</span>`;
+        }
+      } catch (e) {
+        box.innerHTML = `<span class="text-danger">Ошибка: ${e}</span>`;
+      }
+    }
+
+    async function refreshLogs() {
+      try {
+        const res = await fetch("/api/logs");
+        const data = await res.json();
+        const consoleBox = document.getElementById("log-console");
+        if (consoleBox && data.logs) {
+          consoleBox.innerHTML = data.logs.map(l => `<div class="log-line ${l.level}">[${l.timestamp}] [${l.level}] {{ l.message }}</div>`).join("");
+        }
+      } catch (e) {
+        console.warn("Logs error:", e);
+      }
+    }
+  </script>
+</body>
+</html>
