@@ -188,7 +188,7 @@ def resolve_domain(domain):
     return res_list
 
 def fetch_asn(asn_str):
-    asn_num = re.sub(r"[^0-9]", "", asn_str)
+    asn_num = re.sub(r"[^0-9]", "", str(asn_str))
     if not asn_num:
         return []
     url = f"https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS{asn_num}"
@@ -212,10 +212,49 @@ def fetch_asn(asn_str):
     return []
 
 def universal_inspect(query):
-    query = query.strip().lower()
+    query = query.strip()
     if query.startswith("http://") or query.startswith("https://"):
         query = query.split("/")[2].split(":")[0]
         
+    # Check if query is ASN (e.g. AS62041, as15169, 62041)
+    is_asn = bool(re.match(r"^(?:AS|as)?\d+$", query, re.IGNORECASE))
+    if is_asn and "." not in query:
+        asn_num = re.sub(r"[^0-9]", "", query)
+        prefixes = fetch_asn(asn_num)
+        if not prefixes:
+            return {"error": f"Автономная система AS{asn_num} не найдена в реестре RIPEstat или не анонсирует IPv4-префиксы."}
+            
+        primary_ip = prefixes[0].split("/")[0]
+        geo_data = {}
+        try:
+            url = f"http://ip-api.com/json/{primary_ip}?fields=status,message,country,countryCode,as,org,isp,query"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                geo_data = json.loads(resp.read().decode())
+        except Exception as e:
+            geo_data = {"status": "fail", "message": str(e)}
+            
+        asn_raw = geo_data.get("as", f"AS{asn_num}")
+        is_cf = asn_num == "13335" or "cloudflare" in geo_data.get("isp", "").lower()
+        
+        return {
+            "target": f"AS{asn_num}",
+            "is_ip": False,
+            "is_asn": True,
+            "resolved_ips": prefixes,
+            "primary_ip": primary_ip,
+            "country": geo_data.get("country", "Международная сеть"),
+            "country_code": geo_data.get("countryCode", "GL"),
+            "provider": geo_data.get("isp", geo_data.get("org", f"AS{asn_num} Network")),
+            "asn": f"AS{asn_num}",
+            "asn_full": asn_raw,
+            "asn_prefix_count": len(prefixes),
+            "is_cdn": is_cf,
+            "is_cloudflare": is_cf,
+            "in_ru_feed": check_ip_in_feed(primary_ip).get("found", False)
+        }
+
+    # Check if query is IPv4
     is_ip = False
     try:
         ipaddress.IPv4Address(query)
@@ -231,8 +270,8 @@ def universal_inspect(query):
         for d in [query, f"www.{query}"]:
             try:
                 ans = res.resolve(d, "A")
-                for rdata in ans:
-                    resolved_ips.append(rdata.to_text())
+                for r in ans:
+                    resolved_ips.append(r.to_text())
             except Exception:
                 pass
         resolved_ips = list(set(resolved_ips))
@@ -273,6 +312,7 @@ def universal_inspect(query):
     return {
         "target": query,
         "is_ip": is_ip,
+        "is_asn": False,
         "resolved_ips": resolved_ips,
         "primary_ip": primary_ip,
         "country": geo_data.get("country", "Неизвестно"),
