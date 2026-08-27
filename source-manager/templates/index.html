@@ -519,7 +519,7 @@
                   </td>
                   <td><code class="text-info fw-bold">{{ s.value }}</code></td>
                   <td>
-                    <button class="btn btn-sm btn-outline-info py-0 px-2 fw-semibold" onclick="inspectSourcePrefixes({{ s.id }}, \x27{{ s.name }}\x27)">
+                    <button class="btn btn-sm btn-outline-info py-0 px-2 fw-semibold" onclick="inspectSourcePrefixes({{ s.id }}, '{{ s.name }}')">
                       <i class="bi bi-eye"></i> {{ "{:,}".format(s.prefix_count) }} префиксов
                     </button>
                   </td>
@@ -615,7 +615,7 @@
           </div>
 
           <div class="input-group mb-4">
-            <input type="text" id="inspector-input" class="form-control form-control-lg" placeholder="Введите домен, страну, IP или ASN (например: Украина, AS62041, 2ip.ua, 1.1.1.1)..." onkeypress="if(event.key===\x27Enter\x27) runInspector()">
+            <input type="text" id="inspector-input" class="form-control form-control-lg" placeholder="Введите домен, страну, IP или ASN (например: Украина, AS62041, 2ip.ua, 1.1.1.1)..." onkeypress="if(event.key==='Enter') runInspector()">
             <button class="btn btn-primary px-4 fw-bold" onclick="runInspector()"><i class="bi bi-search"></i> Анализировать</button>
           </div>
 
@@ -797,14 +797,156 @@
           </div>
         </div>
 
-        <!-- MikroTik Config Card -->
+        <!-- Multi-Router BGP Config Card -->
         <div class="card-custom p-4 mb-4">
-          <h5 class="fw-bold text-white mb-3"><i class="bi bi-router-fill text-info"></i> Конфигурация для MikroTik (RouterOS 7)</h5>
-          <p class="text-secondary small">Скопируйте эту команду и выполните в терминале MikroTik, чтобы подключиться к BGP-узлу:</p>
-          <pre class="bg-black p-3 rounded text-info mb-0" style="font-size: 0.9rem;"><code>/routing/bgp/connection
-add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ server_asn }} \
+          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+              <h5 class="fw-bold text-white mb-1"><i class="bi bi-hdd-network-fill text-info"></i> Примеры подключения для любых роутеров и ОС</h5>
+              <div class="text-secondary small">Выберите вашу платформу для получения готового скрипта настройки BGP-клиента:</div>
+            </div>
+            <button class="btn btn-sm btn-outline-info" onclick="copyActiveRouterConfig()"><i class="bi bi-clipboard"></i> Скопировать код</button>
+          </div>
+
+          <!-- Router Platform Tabs -->
+          <ul class="nav nav-pills mb-3 gap-2" id="router-config-tabs">
+            <li class="nav-item">
+              <button class="btn btn-sm btn-action-custom active" onclick="showRouterTab('ros7', this)">
+                <i class="bi bi-router"></i> MikroTik RouterOS 7
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="btn btn-sm btn-action-custom" onclick="showRouterTab('ros6', this)">
+                <i class="bi bi-router"></i> MikroTik RouterOS 6
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="btn btn-sm btn-action-custom" onclick="showRouterTab('keenetic', this)">
+                <i class="bi bi-hdd-stack"></i> Keenetic (Entware / BIRD2)
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="btn btn-sm btn-action-custom" onclick="showRouterTab('openwrt', this)">
+                <i class="bi bi-cpu"></i> OpenWrt / Linux (BIRD2)
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="btn btn-sm btn-action-custom" onclick="showRouterTab('vyos', this)">
+                <i class="bi bi-terminal"></i> VyOS / Ubiquiti EdgeOS
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="btn btn-sm btn-action-custom" onclick="showRouterTab('cisco', this)">
+                <i class="bi bi-diagram-3"></i> Cisco IOS / IOS-XE
+              </button>
+            </li>
+          </ul>
+
+          <!-- Router Config Panels -->
+          <div class="tab-content bg-black p-3 rounded border border-secondary border-opacity-25">
+            <!-- 1. RouterOS 7 -->
+            <div id="cfg-ros7" class="router-cfg-pane">
+              <div class="text-secondary small mb-2"># Выполните в терминале MikroTik RouterOS 7 (замените wireguard1 на имя вашего VPN-интерфейса):</div>
+              <pre class="text-info mb-0" style="font-size: 0.88rem; white-space: pre-wrap;" id="code-ros7"><code># 1. Создаем правило фильтрации входящих BGP-маршрутов
+/routing/filter/rule add chain=antifilter-in disabled=no rule="if (bgp-communities includes 65000:1000) { set gw wireguard1; accept; } else { reject; }"
+
+# 2. Подключаемся к BGP-узлу AutoBgpFeed
+/routing/bgp/connection add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ server_asn }} \
     as=64999 local.role=ebgp multihop=yes connect=yes listen=no \
     routing-table=main input.filter=antifilter-in output.filter-chain=discard</code></pre>
+            </div>
+
+            <!-- 2. RouterOS 6 -->
+            <div id="cfg-ros6" class="router-cfg-pane d-none">
+              <div class="text-secondary small mb-2"># Выполните в терминале MikroTik RouterOS 6:</div>
+              <pre class="text-info mb-0" style="font-size: 0.88rem; white-space: pre-wrap;" id="code-ros6"><code># 1. Создаем фильтры маршрутизации
+/routing filter add chain=antifilter-in bgp-communities=65000:1000 set-gateway=wireguard1 action=accept
+/routing filter add chain=antifilter-in action=reject
+
+# 2. Настраиваем BGP Peer
+/routing bgp instance set default as=64999
+/routing bgp peer add name="bgp-feed" remote-address={{ server_ip }} remote-as={{ server_asn }} \
+    multihop=yes in-filter=antifilter-in out-filter=discard hold-time=3m</code></pre>
+            </div>
+
+            <!-- 3. Keenetic -->
+            <div id="cfg-keenetic" class="router-cfg-pane d-none">
+              <div class="text-secondary small mb-2"># Для Keenetic через Entware (opkg update && opkg install bird2): добавьте в /opt/etc/bird.conf:</div>
+              <pre class="text-info mb-0" style="font-size: 0.88rem; white-space: pre-wrap;" id="code-keenetic"><code>protocol bgp bgp_feed {
+    local as 64999;
+    neighbor {{ server_ip }} as {{ server_asn }};
+    multihop;
+    ipv4 {
+        import filter {
+            if (65000, 1000) ~ bgp_community then {
+                gw = 10.0.0.1; # IP вашего VPN-шлюза (WireGuard/OpenVPN)
+                accept;
+            }
+            reject;
+        };
+        export none;
+    };
+}</code></pre>
+            </div>
+
+            <!-- 4. OpenWrt / Linux -->
+            <div id="cfg-openwrt" class="router-cfg-pane d-none">
+              <div class="text-secondary small mb-2"># Для OpenWrt (opkg install bird2) или Linux-клиента в /etc/bird.conf:</div>
+              <pre class="text-info mb-0" style="font-size: 0.88rem; white-space: pre-wrap;" id="code-openwrt"><code>protocol bgp bgp_feed {
+    local as 64999;
+    neighbor {{ server_ip }} as {{ server_asn }};
+    multihop;
+    ipv4 {
+        import filter {
+            if (65000, 1000) ~ bgp_community then {
+                gw = 10.0.0.1; # IP адрес VPN-шлюза (wg0/tun0)
+                accept;
+            }
+            reject;
+        };
+        export none;
+    };
+}</code></pre>
+            </div>
+
+            <!-- 5. VyOS / EdgeOS -->
+            <div id="cfg-vyos" class="router-cfg-pane d-none">
+              <div class="text-secondary small mb-2"># Выполните в CLI VyOS / Ubiquiti EdgeRouter:</div>
+              <pre class="text-info mb-0" style="font-size: 0.88rem; white-space: pre-wrap;" id="code-vyos"><code># 1. Настройка политик фильтрации
+set policy route-map BGP-OUT-DISCARD rule 10 action reject
+set policy route-map BGP-IN-VPN rule 10 match community 65000:1000
+set policy route-map BGP-IN-VPN rule 10 set next-hop 10.0.0.1
+set policy route-map BGP-IN-VPN rule 20 action reject
+
+# 2. Настройка BGP пира
+set protocols bgp system-as 64999
+set protocols bgp neighbor {{ server_ip }} remote-as {{ server_asn }}
+set protocols bgp neighbor {{ server_ip }} ebgp-multihop 10
+set protocols bgp neighbor {{ server_ip }} address-family ipv4-unicast route-map import BGP-IN-VPN
+set protocols bgp neighbor {{ server_ip }} address-family ipv4-unicast route-map export BGP-OUT-DISCARD</code></pre>
+            </div>
+
+            <!-- 6. Cisco -->
+            <div id="cfg-cisco" class="router-cfg-pane d-none">
+              <div class="text-secondary small mb-2"># Конфигурация для Cisco IOS / IOS-XE:</div>
+              <pre class="text-info mb-0" style="font-size: 0.88rem; white-space: pre-wrap;" id="code-cisco"><code>! 1. Фильтры Community и Route-Map
+ip community-list standard CL-FEED permit 65000:1000
+!
+route-map BGP-IN-VPN permit 10
+ match community CL-FEED
+ set ip next-hop 10.0.0.1
+route-map BGP-OUT-DISCARD deny 10
+!
+! 2. Настройка BGP
+router bgp 64999
+ neighbor {{ server_ip }} remote-as {{ server_asn }}
+ neighbor {{ server_ip }} ebgp-multihop 10
+ address-family ipv4
+  neighbor {{ server_ip }} activate
+  neighbor {{ server_ip }} route-map BGP-IN-VPN in
+  neighbor {{ server_ip }} route-map BGP-OUT-DISCARD out
+ exit-address-family</code></pre>
+            </div>
+          </div>
         </div>
 
         <!-- BGP Parameters Card -->
@@ -1105,21 +1247,21 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
         const actBox = document.getElementById("res-actions");
         let htmlBtns = "";
         if (data.is_country) {
-          htmlBtns += `<button class="btn btn-primary btn-sm fw-semibold" onclick="quickAddSource(\x27${data.country}\x27, \x27COUNTRY\x27, \x27${data.country_code}\x27)"><i class="bi bi-globe"></i> Добавить всю ${data.country_code} (${data.asn_prefix_count} сетей • ${data.total_ips_human})</button>`;
+          htmlBtns += `<button class="btn btn-primary btn-sm fw-semibold" onclick="quickAddSource('${data.country}', 'COUNTRY', '${data.country_code}')"><i class="bi bi-globe"></i> Добавить всю ${data.country_code} (${data.asn_prefix_count} сетей • ${data.total_ips_human})</button>`;
         } else if (data.is_asn) {
-          htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.target}\x27, \x27ASN\x27, \x27${data.target}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.target} (${data.asn_prefix_count} сетей • ${data.total_ips_human})</button>`;
+          htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource('${data.provider || data.target}', 'ASN', '${data.target}')"><i class="bi bi-diagram-2"></i> Добавить весь ${data.target} (${data.asn_prefix_count} сетей • ${data.total_ips_human})</button>`;
           if (data.country_code && data.country_code !== "UN" && data.country_code !== "GL") {
-            htmlBtns += `<button class="btn btn-outline-primary btn-sm fw-semibold" onclick="quickAddSource(\x27${data.country}\x27, \x27COUNTRY\x27, \x27${data.country_code}\x27)"><i class="bi bi-globe"></i> Вся страна (${data.country_code})</button>`;
+            htmlBtns += `<button class="btn btn-outline-primary btn-sm fw-semibold" onclick="quickAddSource('${data.country}', 'COUNTRY', '${data.country_code}')"><i class="bi bi-globe"></i> Вся страна (${data.country_code})</button>`;
           }
         } else {
           if (!data.is_ip) {
-            htmlBtns += `<button class="btn btn-success btn-sm fw-semibold" onclick="quickAddSource(\x27${data.target}\x27, \x27DOMAIN\x27, \x27${data.target}\x27)"><i class="bi bi-plus-lg"></i> Добавить как DOMAIN</button>`;
+            htmlBtns += `<button class="btn btn-success btn-sm fw-semibold" onclick="quickAddSource('${data.target}', 'DOMAIN', '${data.target}')"><i class="bi bi-plus-lg"></i> Добавить как DOMAIN</button>`;
           }
           if (data.asn && !data.is_cloudflare) {
-            htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.asn}\x27, \x27ASN\x27, \x27${data.asn}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.asn} (${data.asn_prefix_count} сетей • ${data.total_ips_human})</button>`;
+            htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource('${data.provider || data.asn}', 'ASN', '${data.asn}')"><i class="bi bi-diagram-2"></i> Добавить весь ${data.asn} (${data.asn_prefix_count} сетей • ${data.total_ips_human})</button>`;
           }
           if (data.country_code && data.country_code !== "UN") {
-            htmlBtns += `<button class="btn btn-outline-primary btn-sm fw-semibold" onclick="quickAddSource(\x27${data.country}\x27, \x27COUNTRY\x27, \x27${data.country_code}\x27)"><i class="bi bi-globe"></i> Вся страна (${data.country_code})</button>`;
+            htmlBtns += `<button class="btn btn-outline-primary btn-sm fw-semibold" onclick="quickAddSource('${data.country}', 'COUNTRY', '${data.country_code}')"><i class="bi bi-globe"></i> Вся страна (${data.country_code})</button>`;
           }
         }
         actBox.innerHTML = htmlBtns;
@@ -1200,7 +1342,7 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
     }
 
     function quickAddSource(name, type, val) {
-      document.querySelector(\x27[data-tab="tab-lists"]\x27).click();
+      document.querySelector('[data-tab="tab-lists"]').click();
       document.getElementById("add-form-name").value = name;
       document.getElementById("add-form-type").value = type;
       document.getElementById("add-form-val").value = val;
@@ -1228,6 +1370,28 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
         }
       } catch (e) {
         box.innerHTML = `<span class="text-danger">Ошибка: ${e}</span>`;
+      }
+    }
+
+    let currentRouterTab = "ros7";
+    function showRouterTab(tabId, btn) {
+      currentRouterTab = tabId;
+      document.querySelectorAll(".router-cfg-pane").forEach(p => p.classList.add("d-none"));
+      document.querySelectorAll("#router-config-tabs .btn-action-custom").forEach(b => b.classList.remove("active"));
+      
+      const pane = document.getElementById(`cfg-${tabId}`);
+      if (pane) pane.classList.remove("d-none");
+      if (btn) btn.classList.add("active");
+    }
+
+    function copyActiveRouterConfig() {
+      const codeEl = document.querySelector(`#code-${currentRouterTab} code`);
+      if (codeEl) {
+        navigator.clipboard.writeText(codeEl.innerText).then(() => {
+          alert("✓ Команда скопирована в буфер обмена!");
+        }).catch(() => {
+          alert("Не удалось скопировать. Пожалуйста, выделите текст вручную.");
+        });
       }
     }
 
@@ -1268,7 +1432,7 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
         const data = await res.json();
         const consoleBox = document.getElementById("log-console");
         if (consoleBox && data.logs) {
-          consoleBox.innerHTML = data.logs.map(l => `<div class="log-line ${l.level}">[${l.timestamp}] [${l.level}] {{ l.message }}</div>`).join("");
+          consoleBox.innerHTML = data.logs.map(l => `<div class="log-line ${l.level}">[${l.timestamp}] [${l.level}] ${l.message}</div>`).join("");
         }
       } catch (e) {
         console.warn("Logs error:", e);
