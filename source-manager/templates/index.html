@@ -959,7 +959,7 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
             <div class="alert alert-primary border-primary bg-opacity-10 d-flex align-items-center gap-2 mb-0 py-2">
               <i class="bi bi-globe fs-4 text-primary"></i>
               <div>
-                <strong>Национальный пул IP-адресов страны:</strong> Найдено <b>${data.asn_prefix_count.toLocaleString()}</b> подсетей (всего ${data.total_ips_formatted} IP).
+                <strong>Национальный пул IP-адресов:</strong> Найдено <b>${data.asn_prefix_count.toLocaleString()}</b> подсетей (всего <b>${data.total_ips_human}</b> / ${data.total_ips_formatted} IP).
                 <span class="text-light">Вы можете добавить всю страну в BGP-маршрутизацию в 1 клик!</span>
               </div>
             </div>
@@ -982,10 +982,11 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
             </div>
           `;
         } else {
+          const ipNote = data.total_ips_human ? ` (${data.asn_prefix_count} префиксов • ${data.total_ips_human})` : "";
           alertBox.innerHTML = `
             <div class="alert alert-success border-success bg-opacity-10 d-flex align-items-center gap-2 mb-0 py-2">
               <i class="bi bi-check-circle-fill fs-4 text-success"></i>
-              <div><strong>Прямой сервер:</strong> Можно безопасно добавлять как отдельный <b>DOMAIN</b> или как <b>ASN</b> (${data.asn_prefix_count ? data.asn_prefix_count + " префиксов" : "автономная система"}).</div>
+              <div><strong>Прямой сервер:</strong> Можно безопасно добавлять как отдельный <b>DOMAIN</b> или как <b>ASN</b>${ipNote}.</div>
             </div>
           `;
         }
@@ -994,9 +995,9 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
         const actBox = document.getElementById("res-actions");
         let htmlBtns = "";
         if (data.is_country) {
-          htmlBtns += `<button class="btn btn-primary btn-sm fw-semibold" onclick="quickAddSource(\x27${data.country}\x27, \x27COUNTRY\x27, \x27${data.country_code}\x27)"><i class="bi bi-globe"></i> Добавить всю ${data.country_code} (${data.asn_prefix_count} сетей)</button>`;
+          htmlBtns += `<button class="btn btn-primary btn-sm fw-semibold" onclick="quickAddSource(\x27${data.country}\x27, \x27COUNTRY\x27, \x27${data.country_code}\x27)"><i class="bi bi-globe"></i> Добавить всю ${data.country_code} (${data.asn_prefix_count} сетей • ${data.total_ips_human})</button>`;
         } else if (data.is_asn) {
-          htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.target}\x27, \x27ASN\x27, \x27${data.target}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.target}</button>`;
+          htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.target}\x27, \x27ASN\x27, \x27${data.target}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.target} (${data.asn_prefix_count} сетей • ${data.total_ips_human})</button>`;
           if (data.country_code && data.country_code !== "UN" && data.country_code !== "GL") {
             htmlBtns += `<button class="btn btn-outline-primary btn-sm fw-semibold" onclick="quickAddSource(\x27${data.country}\x27, \x27COUNTRY\x27, \x27${data.country_code}\x27)"><i class="bi bi-globe"></i> Вся страна (${data.country_code})</button>`;
           }
@@ -1005,7 +1006,7 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
             htmlBtns += `<button class="btn btn-success btn-sm fw-semibold" onclick="quickAddSource(\x27${data.target}\x27, \x27DOMAIN\x27, \x27${data.target}\x27)"><i class="bi bi-plus-lg"></i> Добавить как DOMAIN</button>`;
           }
           if (data.asn && !data.is_cloudflare) {
-            htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.asn}\x27, \x27ASN\x27, \x27${data.asn}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.asn}</button>`;
+            htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.asn}\x27, \x27ASN\x27, \x27${data.asn}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.asn} (${data.asn_prefix_count} сетей • ${data.total_ips_human})</button>`;
           }
           if (data.country_code && data.country_code !== "UN") {
             htmlBtns += `<button class="btn btn-outline-primary btn-sm fw-semibold" onclick="quickAddSource(\x27${data.country}\x27, \x27COUNTRY\x27, \x27${data.country_code}\x27)"><i class="bi bi-globe"></i> Вся страна (${data.country_code})</button>`;
@@ -1014,9 +1015,14 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
         actBox.innerHTML = htmlBtns;
         
         // Render IP / Subnet Tags
-        const countLabel = (data.is_asn || data.is_country)
-          ? `${data.resolved_ips.length} подсетей (${data.total_ips_formatted || 0} IPv4)` 
-          : `${data.resolved_ips.length} IP`;
+        let countLabel = "";
+        if (data.is_country) {
+          countLabel = `${data.asn_prefix_count.toLocaleString()} подсетей (${data.total_ips_human || data.total_ips_formatted + " IP"})`;
+        } else if (data.is_asn) {
+          countLabel = `${data.asn_prefix_count.toLocaleString()} подсетей (${data.total_ips_human || data.total_ips_formatted + " IP"})`;
+        } else {
+          countLabel = `${data.resolved_ips.length} IP (${data.total_ips_human || data.resolved_ips.length + " IP"})`;
+        }
         document.getElementById("res-ip-count").innerText = countLabel;
         
         if (data.prefix_details && data.prefix_details.length > 0) {
