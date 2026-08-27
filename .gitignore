@@ -1,0 +1,22 @@
+# Environments & secrets
+.env
+*.env.local
+
+# Databases & Runtime Data
+data/
+bgp-core/generated/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# OS specific
+.DS_Store
+Thumbs.db

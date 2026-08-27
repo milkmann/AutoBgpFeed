@@ -1,0 +1,55 @@
+services:
+  bgp-core:
+    build: ./bgp-core
+    container_name: bgp-core
+    restart: unless-stopped
+    volumes:
+      - ./bgp-core/bird.conf:/etc/bird.conf:ro
+      - ./bgp-core/generated:/generated:rw
+      - ./data:/data:rw
+    networks:
+      bgp-internal:
+        ipv4_address: 172.30.0.2
+
+  public-bgp:
+    build: ./public-bgp
+    container_name: public-bgp
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "${BGP_PORT:-179}:179"
+    volumes:
+      - ./public-bgp/frr.conf:/etc/frr/frr.conf:ro
+      - ./public-bgp/daemons:/etc/frr/daemons:ro
+    networks:
+      bgp-internal:
+        ipv4_address: 172.30.0.3
+
+  source-manager:
+    build: ./source-manager
+    container_name: source-manager
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    environment:
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASS=${ADMIN_PASS:-changeme}
+      - SERVER_IP=${SERVER_IP:-127.0.0.1}
+      - SERVER_ASN=${SERVER_ASN:-65000}
+      - DATA_DIR=/data
+      - GENERATED_DIR=/generated
+      - BGP_CORE_CONTAINER=bgp-core
+    volumes:
+      - ./data:/data:rw
+      - ./bgp-core/generated:/generated:rw
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+    networks:
+      bgp-internal:
+        ipv4_address: 172.30.0.4
+
+networks:
+  bgp-internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
