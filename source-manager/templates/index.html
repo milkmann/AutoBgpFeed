@@ -248,7 +248,7 @@
 
       <div class="px-2 pt-3 border-top border-secondary border-opacity-25">
         <div class="small text-muted">Пользователь:</div>
-        <div class="fw-semibold text-info">{{ current_user }}</div>
+        <div class="fw-semibold text-info">{{ current_user }} <span class="badge bg-secondary bg-opacity-50 text-light ms-1" style="font-size: 0.7rem;">{{ current_user_role }}</span></div>
         <div class="small text-secondary mt-1">BGP: {{ server_ip }}:179</div>
       </div>
     </div>
@@ -689,6 +689,115 @@
 
       <!-- ================= TAB 5: SETTINGS ================= -->
       <div id="tab-settings" class="tab-content-section d-none">
+        
+        <!-- Row: Change Password & User Management -->
+        <div class="row g-4 mb-4">
+          <!-- Change Password Card -->
+          <div class="col-lg-5">
+            <div class="card-custom p-4 h-100">
+              <h5 class="fw-bold text-white mb-2"><i class="bi bi-key-fill text-warning"></i> Смена пароля</h5>
+              <p class="text-secondary small mb-3">Изменение пароля для текущей учетной записи <b>{{ current_user }}</b>.</p>
+              
+              <div id="pwd-alert" class="d-none mb-3"></div>
+              
+              <form id="form-change-password" onsubmit="submitChangePassword(event)">
+                <div class="mb-3">
+                  <label class="form-label text-secondary small fw-semibold">Текущий пароль</label>
+                  <input type="password" id="pwd-old" class="form-control" placeholder="••••••••" required>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label text-secondary small fw-semibold">Новый пароль</label>
+                  <input type="password" id="pwd-new" class="form-control" placeholder="••••••••" required minlength="4">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label text-secondary small fw-semibold">Подтвердите новый пароль</label>
+                  <input type="password" id="pwd-confirm" class="form-control" placeholder="••••••••" required minlength="4">
+                </div>
+                <button type="submit" class="btn btn-warning w-100 fw-semibold"><i class="bi bi-shield-lock"></i> Обновить пароль</button>
+              </form>
+            </div>
+          </div>
+
+          <!-- User Management Card -->
+          <div class="col-lg-7">
+            <div class="card-custom p-4 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="fw-bold text-white mb-0"><i class="bi bi-people-fill text-info"></i> Управление пользователями</h5>
+                <span class="badge bg-info bg-opacity-25 text-info">{{ users_list|length }} учетных записей</span>
+              </div>
+              <p class="text-secondary small mb-3">Создавайте дополнительных пользователей с правами администратора или только для просмотра.</p>
+              
+              <!-- Users Table -->
+              <div class="table-responsive mb-4">
+                <table class="table table-custom align-middle">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Пользователь</th>
+                      <th>Роль</th>
+                      <th>Создан</th>
+                      <th class="text-end">Удалить</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for u in users_list %}
+                    <tr>
+                      <td class="text-secondary">{{ u.id }}</td>
+                      <td class="fw-bold text-white">
+                        <i class="bi bi-person-circle text-secondary me-1"></i> {{ u.username }}
+                        {% if u.username == current_user %}
+                          <span class="badge bg-success bg-opacity-25 text-success ms-1">Вы</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        {% if u.role == "admin" %}
+                          <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-25"><i class="bi bi-shield-check"></i> Admin</span>
+                        {% else %}
+                          <span class="badge bg-secondary bg-opacity-25 text-light"><i class="bi bi-eye"></i> Viewer</span>
+                        {% endif %}
+                      </td>
+                      <td><small class="text-secondary">{{ u.created_at }}</small></td>
+                      <td class="text-end">
+                        {% if u.id != current_user_id %}
+                        <form action="/api/users/{{ u.id }}/delete" method="post" class="d-inline" onsubmit="return confirm('Удалить пользователя «{{ u.username }}»?')">
+                          <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">✕</button>
+                        </form>
+                        {% else %}
+                        <button class="btn btn-sm btn-secondary py-0 px-2 opacity-50" disabled>—</button>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Add User Form -->
+              <div class="p-3 bg-dark bg-opacity-50 rounded border border-secondary border-opacity-25">
+                <div class="fw-semibold text-white small mb-2"><i class="bi bi-person-plus-fill text-success"></i> Добавить нового пользователя</div>
+                <form action="/api/users/add" method="post" class="row g-2">
+                  <div class="col-md-4">
+                    <input type="text" name="username" class="form-control form-control-sm" placeholder="Логин (например, alex)" required>
+                  </div>
+                  <div class="col-md-4">
+                    <input type="password" name="password" class="form-control form-control-sm" placeholder="Пароль" required minlength="4">
+                  </div>
+                  <div class="col-md-2">
+                    <select name="role" class="form-select form-select-sm">
+                      <option value="admin">Admin</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                  </div>
+                  <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary btn-sm w-100 fw-semibold">+ Добавить</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MikroTik Config Card -->
         <div class="card-custom p-4 mb-4">
           <h5 class="fw-bold text-white mb-3"><i class="bi bi-router-fill text-info"></i> Конфигурация для MikroTik (RouterOS 7)</h5>
           <p class="text-secondary small">Скопируйте эту команду и выполните в терминале MikroTik, чтобы подключиться к BGP-узлу:</p>
@@ -698,6 +807,7 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
     routing-table=main input.filter=antifilter-in output.filter-chain=discard</code></pre>
         </div>
 
+        <!-- BGP Parameters Card -->
         <div class="card-custom p-4">
           <h5 class="fw-bold text-white mb-3"><i class="bi bi-info-circle text-warning"></i> Параметры BGP-сервера</h5>
           <div class="row g-3">
@@ -1118,6 +1228,37 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
         }
       } catch (e) {
         box.innerHTML = `<span class="text-danger">Ошибка: ${e}</span>`;
+      }
+    }
+
+    async function submitChangePassword(e) {
+      e.preventDefault();
+      const oldPwd = document.getElementById("pwd-old").value;
+      const newPwd = document.getElementById("pwd-new").value;
+      const confirmPwd = document.getElementById("pwd-confirm").value;
+      const alertBox = document.getElementById("pwd-alert");
+      
+      const fd = new FormData();
+      fd.append("old_password", oldPwd);
+      fd.append("new_password", newPwd);
+      fd.append("confirm_password", confirmPwd);
+      
+      try {
+        const res = await fetch("/api/users/change-password", { method: "POST", body: fd });
+        const data = await res.json();
+        alertBox.classList.remove("d-none");
+        if (res.ok) {
+          alertBox.className = "alert alert-success py-2 small mb-3";
+          alertBox.innerText = data.message;
+          document.getElementById("form-change-password").reset();
+        } else {
+          alertBox.className = "alert alert-danger py-2 small mb-3";
+          alertBox.innerText = data.message || "Ошибка смены пароля";
+        }
+      } catch (err) {
+        alertBox.classList.remove("d-none");
+        alertBox.className = "alert alert-danger py-2 small mb-3";
+        alertBox.innerText = "Ошибка сервера: " + err;
       }
     }
 
