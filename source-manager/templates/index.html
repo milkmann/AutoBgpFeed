@@ -609,19 +609,19 @@
           <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
               <h5 class="fw-bold text-white mb-1"><i class="bi bi-radar text-info"></i> Универсальный сетевой инспектор & Разведка</h5>
-              <div class="text-secondary small">Введите любой сайт или IP: система мгновенно определит его провайдера, ASN, страну, проверит наличие Cloudflare/CDN и подскажет, как лучше добавить.</div>
+              <div class="text-secondary small">Введите любой сайт, IP или номер ASN (например AS62041): система мгновенно определит его подсети, провайдера, страну и предоставит ссылки на независимые BGP-агрегаторы.</div>
             </div>
           </div>
 
           <div class="input-group mb-4">
-            <input type="text" id="inspector-input" class="form-control form-control-lg" placeholder="Введите домен или IP (например: 2ip.ua, rutracker.org, t.me, 1.1.1.1)..." onkeypress="if(event.key===\x27Enter\x27) runInspector()">
+            <input type="text" id="inspector-input" class="form-control form-control-lg" placeholder="Введите домен, IP или ASN (например: AS62041, 2ip.ua, rutracker.org, 1.1.1.1)..." onkeypress="if(event.key===\x27Enter\x27) runInspector()">
             <button class="btn btn-primary px-4 fw-bold" onclick="runInspector()"><i class="bi bi-search"></i> Анализировать</button>
           </div>
 
           <!-- Loading Indicator -->
           <div id="inspector-loading" class="text-center py-4 d-none">
             <div class="spinner-border text-info" role="status"></div>
-            <div class="text-secondary small mt-2">Опрос глобальных DNS и реестров RIR...</div>
+            <div class="text-secondary small mt-2">Опрос глобальных DNS и реестров RIR (RIPE NCC)...</div>
           </div>
 
           <!-- Inspector Result Card -->
@@ -666,7 +666,7 @@
             <!-- Resolved IP list -->
             <div class="mt-3 p-3 bg-black rounded border border-secondary border-opacity-25">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="small fw-semibold text-secondary"><i class="bi bi-hdd-network text-success"></i> Найденные IPv4-адреса хоста:</div>
+                <div class="small fw-semibold text-secondary"><i class="bi bi-hdd-network text-success"></i> Анонсированные подсети / IPv4-адреса:</div>
                 <span class="badge bg-secondary bg-opacity-25 text-light" id="res-ip-count">0 IP</span>
               </div>
               <div class="d-flex flex-wrap gap-2" id="res-ip-tags"></div>
@@ -956,19 +956,76 @@ add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ 
         // Render Action Buttons
         const actBox = document.getElementById("res-actions");
         let htmlBtns = "";
-        if (!data.is_ip) {
-          htmlBtns += `<button class="btn btn-success btn-sm fw-semibold" onclick="quickAddSource(\x27${data.target}\x27, \x27DOMAIN\x27, \x27${data.target}\x27)"><i class="bi bi-plus-lg"></i> Добавить как DOMAIN</button>`;
-        }
-        if (data.asn && !data.is_cloudflare) {
-          htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.asn}\x27, \x27ASN\x27, \x27${data.asn}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.asn}</button>`;
+        if (data.is_asn) {
+          htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.target}\x27, \x27ASN\x27, \x27${data.target}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.target}</button>`;
+        } else {
+          if (!data.is_ip) {
+            htmlBtns += `<button class="btn btn-success btn-sm fw-semibold" onclick="quickAddSource(\x27${data.target}\x27, \x27DOMAIN\x27, \x27${data.target}\x27)"><i class="bi bi-plus-lg"></i> Добавить как DOMAIN</button>`;
+          }
+          if (data.asn && !data.is_cloudflare) {
+            htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource(\x27${data.provider || data.asn}\x27, \x27ASN\x27, \x27${data.asn}\x27)"><i class="bi bi-diagram-2"></i> Добавить весь ${data.asn}</button>`;
+          }
         }
         actBox.innerHTML = htmlBtns;
         
-        // Render IP Tags
-        document.getElementById("res-ip-count").innerText = `${data.resolved_ips.length} IP`;
-        document.getElementById("res-ip-tags").innerHTML = data.resolved_ips.map(ip => `
-          <code class="p-2 bg-dark rounded text-info border border-secondary">${ip}</code>
-        `).join("");
+        // Render IP / Subnet Tags
+        const countLabel = data.is_asn 
+          ? `${data.resolved_ips.length} подсетей (${data.total_ips_formatted || 0} IPv4)` 
+          : `${data.resolved_ips.length} IP`;
+        document.getElementById("res-ip-count").innerText = countLabel;
+        
+        if (data.prefix_details && data.prefix_details.length > 0) {
+          document.getElementById("res-ip-tags").innerHTML = data.prefix_details.map(p => `
+            <div class="p-2 bg-dark rounded text-info border border-secondary d-flex align-items-center gap-2">
+              <i class="bi bi-hdd-network"></i>
+              <span class="fw-bold">${p.prefix}</span>
+              <span class="badge bg-secondary bg-opacity-50 text-light">${p.addresses}</span>
+            </div>
+          `).join("");
+        } else {
+          document.getElementById("res-ip-tags").innerHTML = data.resolved_ips.map(p => `
+            <code class="p-2 bg-dark rounded text-info border border-secondary">${p}</code>
+          `).join("");
+        }
+
+        // Render External Aggregator Links
+        let linksBox = document.getElementById("res-external-links");
+        if (!linksBox) {
+          const linksContainer = document.createElement("div");
+          linksContainer.id = "res-external-links";
+          linksContainer.className = "mt-3 pt-3 border-top border-secondary border-opacity-25";
+          document.getElementById("inspector-result").appendChild(linksContainer);
+          linksBox = linksContainer;
+        }
+
+        if (data.external_links && Object.keys(data.external_links).length > 0) {
+          linksBox.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+              <div class="small fw-semibold text-secondary"><i class="bi bi-box-arrow-up-right text-warning"></i> Проверить в независимых BGP-агрегаторах и реестрах:</div>
+              <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">100% официальные BGP-анонсы</span>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+              <a href="${data.external_links.he}" target="_blank" class="btn btn-sm btn-outline-info text-decoration-none">
+                <i class="bi bi-hurricane"></i> Hurricane Electric (bgp.he.net)
+              </a>
+              <a href="${data.external_links.bgpview}" target="_blank" class="btn btn-sm btn-outline-light text-decoration-none">
+                <i class="bi bi-eye"></i> BGPView.io
+              </a>
+              <a href="${data.external_links.ripe}" target="_blank" class="btn btn-sm btn-outline-warning text-decoration-none">
+                <i class="bi bi-globe2"></i> RIPEstat NCC (Европейский RIR)
+              </a>
+              <a href="${data.external_links.qrator}" target="_blank" class="btn btn-sm btn-outline-success text-decoration-none">
+                <i class="bi bi-shield-check"></i> Radar Qrator
+              </a>
+              <a href="${data.external_links.peeringdb}" target="_blank" class="btn btn-sm btn-outline-secondary text-decoration-none">
+                <i class="bi bi-diagram-3"></i> PeeringDB
+              </a>
+            </div>
+          `;
+          linksBox.classList.remove("d-none");
+        } else {
+          linksBox.classList.add("d-none");
+        }
         
       } catch (e) {
         loading.classList.add("d-none");
