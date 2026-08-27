@@ -173,9 +173,17 @@ async def add_source(name: str = Form(...), source_type: str = Form(...), value:
     conn = get_db()
     cursor = conn.cursor()
     
+    val_clean = value.strip()
+    name_clean = name.strip()
     comm = "65000:1000"
-    if source_type == "COUNTRY" charity_comm="65000:643":
-        comm = "65000:643"
+    
+    if source_type == "COUNTRY":
+        from .engine import resolve_country_input
+        iso_code, nice_name, iso_num = resolve_country_input(val_clean)
+        val_clean = iso_code
+        if not name_clean or name_clean.lower() in ["страна", "country", ""]:
+            name_clean = nice_name
+        comm = f"65000:{iso_num}"
     elif source_type == "DOMAIN":
         comm = "65000:200"
     elif source_type == "ASN":
@@ -186,10 +194,10 @@ async def add_source(name: str = Form(...), source_type: str = Form(...), value:
     cursor.execute("""
         INSERT INTO sources (name, type, value, enabled, community, status)
         VALUES (?, ?, ?, 1, ?, "pending")
-    """, (name, source_type, value, comm))
+    """, (name_clean, source_type, val_clean, comm))
     conn.close()
     
-    log_msg(f"Добавлен источник: {name} ({source_type}: {value})", "INFO")
+    log_msg(f"Добавлен источник: {name_clean} ({source_type}: {val_clean})", "INFO")
     asyncio.create_task(asyncio.to_thread(rebuild_all, force_ru_download=False))
     return RedirectResponse(url="/#sources", status_code=303)
 
