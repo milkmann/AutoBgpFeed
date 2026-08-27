@@ -32,6 +32,81 @@ CLOUDFLARE_NETWORKS = [
     ipaddress.IPv4Network("131.0.72.0/22"),
 ]
 
+COUNTRY_MAP = {
+    "ua": ("UA", "Ukraine (Украина)", 804),
+    "ukraine": ("UA", "Ukraine (Украина)", 804),
+    "украина": ("UA", "Ukraine (Украина)", 804),
+    "україна": ("UA", "Ukraine (Украина)", 804),
+    "ru": ("RU", "Russia (Россия)", 643),
+    "russia": ("RU", "Russia (Россия)", 643),
+    "россия": ("RU", "Russia (Россия)", 643),
+    "рф": ("RU", "Russia (Россия)", 643),
+    "pl": ("PL", "Poland (Польша)", 616),
+    "poland": ("PL", "Poland (Польша)", 616),
+    "польша": ("PL", "Poland (Польша)", 616),
+    "kz": ("KZ", "Kazakhstan (Казахстан)", 398),
+    "kazakhstan": ("KZ", "Kazakhstan (Казахстан)", 398),
+    "казахстан": ("KZ", "Kazakhstan (Казахстан)", 398),
+    "by": ("BY", "Belarus (Беларусь)", 112),
+    "belarus": ("BY", "Belarus (Беларусь)", 112),
+    "беларусь": ("BY", "Belarus (Беларусь)", 112),
+    "ge": ("GE", "Georgia (Грузия)", 268),
+    "georgia": ("GE", "Georgia (Грузия)", 268),
+    "грузия": ("GE", "Georgia (Грузия)", 268),
+    "am": ("AM", "Armenia (Армения)", 51),
+    "armenia": ("AM", "Armenia (Армения)", 51),
+    "армения": ("AM", "Armenia (Армения)", 51),
+    "az": ("AZ", "Azerbaijan (Азербайджан)", 31),
+    "azerbaijan": ("AZ", "Azerbaijan (Азербайджан)", 31),
+    "азербайджан": ("AZ", "Azerbaijan (Азербайджан)", 31),
+    "uz": ("UZ", "Uzbekistan (Узбекистан)", 860),
+    "uzbekistan": ("UZ", "Uzbekistan (Узбекистан)", 860),
+    "узбекистан": ("UZ", "Uzbekistan (Узбекистан)", 860),
+    "md": ("MD", "Moldova (Молдова)", 498),
+    "moldova": ("MD", "Moldova (Молдова)", 498),
+    "молдова": ("MD", "Moldova (Молдова)", 498),
+    "tr": ("TR", "Turkey (Турция)", 792),
+    "turkey": ("TR", "Turkey (Турция)", 792),
+    "турция": ("TR", "Turkey (Турция)", 792),
+    "de": ("DE", "Germany (Германия)", 276),
+    "germany": ("DE", "Germany (Германия)", 276),
+    "германия": ("DE", "Germany (Германия)", 276),
+    "us": ("US", "United States (США)", 840),
+    "usa": ("US", "United States (США)", 840),
+    "сша": ("US", "United States (США)", 840),
+    "nl": ("NL", "Netherlands (Нидерланды)", 528),
+    "netherlands": ("NL", "Netherlands (Нидерланды)", 528),
+    "нидерланды": ("NL", "Netherlands (Нидерланды)", 528),
+    "gb": ("GB", "United Kingdom (Великобритания)", 826),
+    "uk": ("GB", "United Kingdom (Великобритания)", 826),
+    "великобритания": ("GB", "United Kingdom (Великобритания)", 826),
+    "fr": ("FR", "France (Франция)", 250),
+    "france": ("FR", "France (Франция)", 250),
+    "франция": ("FR", "France (Франция)", 250),
+}
+
+def resolve_country_input(q):
+    if not q:
+        return ("UN", "Unknown Country", 1000)
+    q_clean = q.strip().lower()
+    if q_clean in COUNTRY_MAP:
+        return COUNTRY_MAP[q_clean]
+    if len(q_clean) == 2 and q_clean.isalpha():
+        cc = q_clean.upper()
+        return (cc, f"Country {cc}", 1000)
+    return (q[:2].upper(), q, 1000)
+
+def format_ip_human(num):
+    if not num:
+        return "0 IP"
+    if num >= 1_000_000:
+        val = round(num / 1_000_000, 1)
+        return f"~{val:g} млн IP"
+    elif num >= 1_000:
+        val = round(num / 1_000, 1)
+        return f"{val:g} тыс. IP"
+    return f"{num} IP"
+
 def update_cloudflare_ranges():
     global CLOUDFLARE_NETWORKS
     try:
@@ -81,8 +156,9 @@ def is_valid_ipv4_net(cidr_str):
     except Exception:
         return None
 
-def fetch_ru_prefixes(force_download=False):
-    cache_file = os.path.join(DATA_DIR, "last-good", "ru_prefixes.txt")
+def fetch_country_prefixes(country_code, force_download=False):
+    cc = country_code.strip().upper()
+    cache_file = os.path.join(DATA_DIR, "last-good", f"{cc.lower()}_prefixes.txt")
     os.makedirs(os.path.dirname(cache_file), exist_ok=True)
     
     if not force_download and os.path.exists(cache_file):
@@ -91,10 +167,10 @@ def fetch_ru_prefixes(force_download=False):
             if cached:
                 return cached
 
-    log_msg("Загрузка актуального реестра RU подсетей (IPverse & RIPE NCC)...", "INFO")
+    log_msg(f"Загрузка актуального реестра подсетей страны {cc} (IPverse)...", "INFO")
     nets = []
     try:
-        url = "https://raw.githubusercontent.com/ipverse/rir-ip/master/country/ru/ipv4-aggregated.txt"
+        url = f"https://raw.githubusercontent.com/ipverse/rir-ip/master/country/{cc.lower()}/ipv4-aggregated.txt"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             lines = resp.read().decode().splitlines()
@@ -104,9 +180,9 @@ def fetch_ru_prefixes(force_download=False):
                 net = is_valid_ipv4_net(line)
                 if net:
                     nets.append(net)
-        log_msg(f"Получено {len(nets):,} сетей из IPverse", "INFO")
+        log_msg(f"Получено {len(nets):,} сетей для {cc} из IPverse", "INFO")
     except Exception as e:
-        log_msg(f"Ошибка загрузки IPverse RU: {e}", "WARN")
+        log_msg(f"Ошибка загрузки IPverse для {cc}: {e}", "WARN")
 
     if not nets:
         try:
@@ -116,7 +192,7 @@ def fetch_ru_prefixes(force_download=False):
                 lines = resp.read().decode().splitlines()
             for l in lines:
                 parts = l.strip().split("|")
-                if len(parts) >= 7 and parts[1] == "RU" and parts[2] == "ipv4" and parts[6] in ("allocated", "assigned"):
+                if len(parts) >= 7 and parts[1] == cc and parts[2] == "ipv4" and parts[6] in ("allocated", "assigned"):
                     ip_start = parts[3]
                     count = int(parts[4])
                     if count > 0:
@@ -124,16 +200,16 @@ def fetch_ru_prefixes(force_download=False):
                         net = is_valid_ipv4_net(f"{ip_start}/{prefix_len}")
                         if net:
                             nets.append(net)
-            log_msg(f"Получено {len(nets):,} сетей из RIPE NCC", "INFO")
+            log_msg(f"Получено {len(nets):,} сетей для {cc} из RIPE NCC", "INFO")
         except Exception as e:
-            log_msg(f"Ошибка загрузки RIPE NCC: {e}", "ERROR")
+            log_msg(f"Ошибка загрузки RIPE NCC для {cc}: {e}", "ERROR")
 
     if nets:
         collapsed = list(ipaddress.collapse_addresses(nets))
         with open(cache_file, "w") as f:
             for n in collapsed:
                 f.write(f"{n}\n")
-        log_msg(f"Успешно нормализовано {len(collapsed):,} префиксов RU", "SUCCESS")
+        log_msg(f"Успешно сохранено {len(collapsed):,} префиксов для страны {cc}", "SUCCESS")
         return [str(n) for n in collapsed]
     
     if os.path.exists(cache_file):
@@ -141,6 +217,9 @@ def fetch_ru_prefixes(force_download=False):
             return [l.strip() for l in f if l.strip()]
             
     return []
+
+def fetch_ru_prefixes(force_download=False):
+    return fetch_country_prefixes("RU", force_download=force_download)
 
 def resolve_domain(domain):
     domain = domain.strip().lower()
@@ -216,6 +295,54 @@ def universal_inspect(query):
     if query.startswith("http://") or query.startswith("https://"):
         query = query.split("/")[2].split(":")[0]
         
+    # Check if query is a Country input (e.g. Украина, UA, Poland, PL)
+    q_low = query.lower()
+    if q_low in COUNTRY_MAP or (len(q_low) == 2 and q_low.isalpha()):
+        iso_code, nice_name, iso_num = resolve_country_input(query)
+        prefixes = fetch_country_prefixes(iso_code, force_download=False)
+        total_ips = 0
+        prefix_details = []
+        for p in prefixes[:100]:
+            try:
+                net = ipaddress.IPv4Network(p)
+                total_ips += net.num_addresses
+                prefix_details.append({
+                    "prefix": p,
+                    "addresses": f"{net.num_addresses:,} IP",
+                    "mask": f"/{net.prefixlen}"
+                })
+            except Exception:
+                pass
+                
+        full_total = sum(ipaddress.IPv4Network(p).num_addresses for p in prefixes if is_valid_ipv4_net(p))
+
+        return {
+            "target": f"Страна: {nice_name}",
+            "is_ip": False,
+            "is_asn": False,
+            "is_country": True,
+            "country_code": iso_code,
+            "resolved_ips": prefixes[:100],
+            "prefix_details": prefix_details,
+            "total_ips": full_total,
+            "total_ips_formatted": f"{full_total:,}",
+            "total_ips_human": format_ip_human(full_total),
+            "total_subnets_count": len(prefixes),
+            "country": nice_name,
+            "provider": f"Национальный пул IP ({iso_code})",
+            "asn": f"ISO {iso_num}",
+            "asn_digits": str(iso_num),
+            "asn_full": f"BGP Community 65000:{iso_num}",
+            "asn_prefix_count": len(prefixes),
+            "is_cdn": False,
+            "is_cloudflare": False,
+            "in_ru_feed": iso_code == "RU",
+            "external_links": {
+                "ripe": f"https://stat.ripe.net/country/{iso_code}",
+                "ipinfo": f"https://ipinfo.io/countries/{iso_code.lower()}"
+            }
+        }
+
     # Check if query is ASN (e.g. AS62041, as15169, 62041)
     is_asn = bool(re.match(r"^(?:AS|as)?\d+$", query, re.IGNORECASE))
     if is_asn and "." not in query:
@@ -237,7 +364,6 @@ def universal_inspect(query):
         asn_raw = geo_data.get("as", f"AS{asn_num}")
         is_cf = asn_num == "13335" or "cloudflare" in geo_data.get("isp", "").lower()
         
-        # Calculate total IPs and prefix details
         total_ips = 0
         prefix_details = []
         for p in prefixes:
@@ -256,10 +382,13 @@ def universal_inspect(query):
             "target": f"AS{asn_num}",
             "is_ip": False,
             "is_asn": True,
+            "is_country": False,
             "resolved_ips": prefixes,
             "prefix_details": prefix_details,
             "total_ips": total_ips,
             "total_ips_formatted": f"{total_ips:,}",
+            "total_ips_human": format_ip_human(total_ips),
+            "total_subnets_count": len(prefixes),
             "primary_ip": primary_ip,
             "country": geo_data.get("country", "Международная сеть"),
             "country_code": geo_data.get("countryCode", "GL"),
@@ -349,6 +478,7 @@ def universal_inspect(query):
         "target": query,
         "is_ip": is_ip,
         "is_asn": False,
+        "is_country": False,
         "resolved_ips": resolved_ips,
         "primary_ip": primary_ip,
         "country": geo_data.get("country", "Неизвестно"),
@@ -358,6 +488,8 @@ def universal_inspect(query):
         "asn_digits": asn_digits,
         "asn_full": asn_raw,
         "asn_prefix_count": asn_prefix_count,
+        "total_ips": len(resolved_ips),
+        "total_ips_human": format_ip_human(len(resolved_ips)),
         "is_cdn": is_cdn,
         "is_cloudflare": is_cf,
         "in_ru_feed": in_ru_feed,
@@ -421,8 +553,8 @@ def get_source_prefixes(source_id):
         s_type = source["type"]
         s_val = source["value"]
         
-        if s_type == "COUNTRY" and s_val.upper() == "RU":
-            prefixes = fetch_ru_prefixes(force_download=False)[:100]
+        if s_type == "COUNTRY":
+            prefixes = fetch_country_prefixes(s_val, force_download=False)
         elif s_type == "DOMAIN":
             prefixes = resolve_domain(s_val)
         elif s_type == "ASN":
@@ -457,9 +589,27 @@ def search_routes_in_cache(query="", page=1, limit=50):
                 if m:
                     p = m.group(1)
                     tag = m.group(2)
-                    if not query or query.lower() in p.lower() or "custom" in query.lower():
+                    if not query or query.lower() in p.lower() or "custom" in query.lower() or tag in query:
                         net = is_valid_ipv4_net(p)
-                        tname = "Custom Domain" if tag == "200" else ("Custom ASN" if tag == "300" else "Custom CIDR")
+                        if tag == "200":
+                            tname = "Custom Domain"
+                        elif tag == "300":
+                            tname = "Custom ASN"
+                        elif tag == "600":
+                            tname = "Custom CIDR"
+                        elif tag == "804":
+                            tname = "UA Pool (Украина)"
+                        elif tag == "616":
+                            tname = "PL Pool (Польша)"
+                        elif tag == "398":
+                            tname = "KZ Pool (Казахстан)"
+                        elif tag == "276":
+                            tname = "DE Pool (Германия)"
+                        elif tag == "840":
+                            tname = "US Pool (США)"
+                        else:
+                            tname = f"Custom Feed ({tag})"
+                            
                         custom_results.append({
                             "prefix": p,
                             "addresses": f"{net.num_addresses:,}" if net else "1",
@@ -523,7 +673,7 @@ def rebuild_all(force_ru_download=False):
             
             if s_type == "COUNTRY" and s_val.upper() == "RU":
                 if force_ru_download or not os.path.exists(os.path.join(GENERATED_DIR, "ru_routes.conf")):
-                    prefixes = fetch_ru_prefixes(force_download=force_ru_download)
+                    prefixes = fetch_country_prefixes("RU", force_download=force_ru_download)
                     raw_external_count = len(prefixes)
                     ru_conf_path = os.path.join(GENERATED_DIR, "ru_routes.conf")
                     with open(ru_conf_path, "w") as f:
@@ -532,6 +682,19 @@ def rebuild_all(force_ru_download=False):
                             f.write(f"route {p} blackhole {{ bgp_community.add((65000, 1000)); bgp_community.add((65000, 900)); bgp_community.add((65000, 643)); }};\n")
                 else:
                     raw_external_count = s["prefix_count"] or 8651
+            elif s_type == "COUNTRY":
+                try:
+                    prefixes = fetch_country_prefixes(s_val, force_download=force_ru_download)
+                except Exception as e:
+                    err = str(e)
+                cursor.execute("""
+                    UPDATE sources 
+                    SET prefix_count = ?, last_update = ?, status = ?, error = ?
+                    WHERE id = ?
+                """, (len(prefixes), now_str, "error" if err else "active", err, s_id))
+                custom_added_count += len(prefixes)
+                for p in prefixes:
+                    custom_routes.append((p, s_comm, s_type))
             else:
                 try:
                     if s_type == "DOMAIN":
@@ -573,8 +736,13 @@ def rebuild_all(force_ru_download=False):
         with open(custom_conf_path, "w") as f:
             f.write("# Generated Custom Routes Feed\n")
             for net, comm, stype in sorted(filtered_custom, key=lambda x: str(x[0])):
-                type_tag = 200 if stype == "DOMAIN" else (300 if stype == "ASN" else (600 if stype == "PREFIX" else 500))
-                f.write(f"route {net} blackhole {{ bgp_community.add((65000, 1000)); bgp_community.add((65000, {type_tag})); }};\n")
+                comm_tag = 1000
+                if ":" in comm:
+                    try:
+                        comm_tag = int(comm.split(":")[1])
+                    except Exception:
+                        pass
+                f.write(f"route {net} blackhole {{ bgp_community.add((65000, 1000)); bgp_community.add((65000, {comm_tag})); }};\n")
                 
         reload_bird()
         
