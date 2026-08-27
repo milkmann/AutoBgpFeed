@@ -1,7 +1,27 @@
 import sqlite3
 import os
+import hashlib
+import secrets
 
 DB_PATH = os.environ.get("DATA_DIR", "/data") + "/routefeed.db"
+
+def hash_password(password: str) -> str:
+    salt = os.urandom(16).hex()
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 100000)
+    return f"pbkdf2_sha256$100000${salt}${key.hex()}"
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        if stored_hash.startswith("pbkdf2_sha256$"):
+            parts = stored_hash.split("$")
+            iterations = int(parts[1])
+            salt = bytes.fromhex(parts[2])
+            target_key = parts[3]
+            key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+            return secrets.compare_digest(key.hex(), target_key)
+        return secrets.compare_digest(password, stored_hash)
+    except Exception:
+        return False
 
 def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=30.0, check_same_thread=False, isolation_level=None)
@@ -62,17 +82,36 @@ def init_db():
             collapsed_duplicates INTEGER DEFAULT 0
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT "admin",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     
     cursor.execute("SELECT COUNT(*) FROM sources WHERE type = \"COUNTRY\" AND value = \"RU\"")
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
             INSERT INTO sources (name, type, value, mode, enabled, auto_update, community, status)
-            VALUES ("Russian IPv4 Subnets (RIPE & IPverse)", "COUNTRY", "RU", "aggregated", 1, 1, "65000:643", "active")
+            VALUES ("Российский сегмент (RIPE & IPverse)", "COUNTRY", "RU", "aggregated", 1, 1, "65000:643", "active")
         """)
         
     cursor.execute("SELECT COUNT(*) FROM stats WHERE id = 1")
     if cursor.fetchone()[0] == 0:
         cursor.execute("INSERT INTO stats (id, last_gen_time, gen_duration, final_count) VALUES (1, ?, ?, 0)", ("—", "—"))
+
+    # Seed admin user if table is empty
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
+        admin_user = os.environ.get("ADMIN_USER", "prilous")
+        admin_pass = os.environ.get("ADMIN_PASS", "changeme")
+        cursor.execute("""
+            INSERT INTO users (username, password_hash, role)
+            VALUES (?, ?, "admin")
+        """, (admin_user, hash_password(admin_pass)))
 
     conn.commit()
     conn.close()
