@@ -91,12 +91,29 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS routes_index (
+            prefix TEXT PRIMARY KEY,
+            addresses_count INTEGER,
+            addresses_formatted TEXT,
+            category TEXT,
+            community TEXT,
+            source_name TEXT,
+            date_added TEXT,
+            gateway TEXT DEFAULT "wireguard1",
+            is_custom INTEGER DEFAULT 0
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_routes_category ON routes_index(category)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_routes_addresses ON routes_index(addresses_count)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_routes_date ON routes_index(date_added)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_routes_custom ON routes_index(is_custom)")
     
     cursor.execute("SELECT COUNT(*) FROM sources WHERE type = \"COUNTRY\" AND value = \"RU\"")
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
             INSERT INTO sources (name, type, value, mode, enabled, auto_update, community, status)
-            VALUES ("Российский сегмент (RIPE & IPverse)", "COUNTRY", "RU", "aggregated", 1, 1, "65000:643", "active")
+            VALUES ("Russian IPv4 Subnets (RIPE & IPverse)", "COUNTRY", "RU", "aggregated", 1, 1, "65000:643", "active")
         """)
         
     cursor.execute("SELECT COUNT(*) FROM stats WHERE id = 1")
@@ -107,7 +124,7 @@ def init_db():
     cursor.execute("SELECT COUNT(*) FROM users")
     if cursor.fetchone()[0] == 0:
         admin_user = os.environ.get("ADMIN_USER", "prilous")
-        admin_pass = os.environ.get("ADMIN_PASS", "changeme")
+        admin_pass = os.environ.get("ADMIN_PASS", "Ghbkjec1986")
         cursor.execute("""
             INSERT INTO users (username, password_hash, role)
             VALUES (?, ?, "admin")
