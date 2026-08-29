@@ -578,67 +578,61 @@ def get_source_prefixes(source_id):
         if conn:
             conn.close()
 
-def search_routes_in_cache(query="", page=1, limit=50):
-    custom_results = []
-    custom_conf = os.path.join(GENERATED_DIR, "custom_routes.conf")
-    if os.path.exists(custom_conf):
-        with open(custom_conf, "r") as f:
-            for line in f:
-                m = re.match(r"route\s+([0-9\.\/]+)\s+blackhole.*?bgp_community\.add\(\(65000,\s*(\d+)\)\)", line)
-                if m:
-                    p = m.group(1)
-                    tag = m.group(2)
-                    if not query or query.lower() in p.lower() or "custom" in query.lower() or tag in query:
-                        net = is_valid_ipv4_net(p)
-                        if tag == "200":
-                            tname = "Custom Domain"
-                        elif tag == "300":
-                            tname = "Custom ASN"
-                        elif tag == "600":
-                            tname = "Custom CIDR"
-                        elif tag == "804":
-                            tname = "UA Pool (Украина)"
-                        elif tag == "616":
-                            tname = "PL Pool (Польша)"
-                        elif tag == "398":
-                            tname = "KZ Pool (Казахстан)"
-                        elif tag == "276":
-                            tname = "DE Pool (Германия)"
-                        elif tag == "840":
-                            tname = "US Pool (США)"
-                        else:
-                            tname = f"Custom Feed ({tag})"
-                            
-                        custom_results.append({
-                            "prefix": p,
-                            "addresses": f"{net.num_addresses:,}" if net else "1",
-                            "type": tname,
-                            "community": f"65000:{tag}",
-                            "gateway": "wireguard1"
-                        })
-
-    ru_results = []
-    cache_file = os.path.join(DATA_DIR, "last-good", "ru_prefixes.txt")
-    if os.path.exists(cache_file):
-        with open(cache_file, "r") as f:
-            for l in f:
-                p = l.strip()
-                if p:
-                    if not query or query.lower() in p.lower() or "ru" in query.lower():
-                        net = is_valid_ipv4_net(p)
-                        ru_results.append({
-                            "prefix": p,
-                            "addresses": f"{net.num_addresses:,}" if net else "1",
-                            "type": "RU Pool",
-                            "community": "65000:643 (RU)",
-                            "gateway": "wireguard1"
-                        })
-                        
-    all_results = custom_results + ru_results
-    total = len(all_results)
-    start = (page - 1) * limit
-    end = start + limit
-    return {"total": total, "page": page, "limit": limit, "items": all_results[start:end]}
+def search_routes_in_cache(query="", page=1, limit=50, sort_by="default", sort_order="asc"):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check if routes_index has data, if empty, populate quickly from cache
+    cursor.execute("SELECT COUNT(*) FROM routes_index")
+    if cursor.fetchone()[0] == 0:
+        rebuild_all(force_ru_download=False)
+        
+    base_where = ""
+    params = []
+    if query:
+        q_clean = query.strip()
+        base_where = "WHERE (prefix LIKE ? OR category LIKE ? OR source_name LIKE ? OR community LIKE ?)"
+        q_like = f"%{q_clean}%"
+        params = [q_like, q_like, q_like, q_like]
+        
+    cursor.execute(f"SELECT COUNT(*) FROM routes_index {base_where}", params)
+    total = cursor.fetchone()[0]
+    
+    order = "ASC" if sort_order.lower() == "asc" else "DESC"
+    
+    if sort_by == "date":
+        order_clause = f"ORDER BY is_custom DESC, date_added {order}, prefix ASC"
+    elif sort_by == "prefix":
+        order_clause = f"ORDER BY prefix {order}"
+    elif sort_by == "addresses":
+        order_clause = f"ORDER BY addresses_count {order}, prefix ASC"
+    elif sort_by == "category":
+        order_clause = f"ORDER BY category {order}, prefix ASC"
+    elif sort_by == "community":
+        order_clause = f"ORDER BY community {order}, prefix ASC"
+    else:
+        # Default: Custom on top, then IP prefix ASC
+        order_clause = "ORDER BY is_custom DESC, prefix ASC"
+        
+    offset = max(0, (page - 1) * limit)
+    cursor.execute(f"SELECT prefix, addresses_count, addresses_formatted, category, community, source_name, date_added, gateway, is_custom FROM routes_index {base_where} {order_clause} LIMIT ? OFFSET ?", params + [limit, offset])
+    rows = cursor.fetchall()
+    conn.close()
+    
+    items = [
+        {
+            "prefix": r["prefix"],
+            "addresses": r["addresses_formatted"] or f"{r['addresses_count']:,} IP",
+            "type": r["category"],
+            "community": r["community"],
+            "gateway": r["gateway"] or "wireguard1",
+            "date_added": r["date_added"] or "—",
+            "source_name": r["source_name"] or "",
+            "is_custom": bool(r["is_custom"])
+        }
+        for r in rows
+    ]
+    return {"total": total, "page": page, "limit": limit, "items": items, "sort_by": sort_by, "sort_order": sort_order}
 
 def rebuild_all(force_ru_download=False):
     t_start = time.time()
@@ -748,6 +742,81 @@ def rebuild_all(force_ru_download=False):
                     except Exception:
                         pass
                 f.write(f"route {net} blackhole {{ bgp_community.add((65000, 1000)); bgp_community.add((65000, {comm_tag})); }};\n")
+
+        # Populate routes_index for lightning-fast search, sorting, and pagination
+        cursor.execute("SELECT COUNT(*) FROM routes_index WHERE is_custom = 0")
+        ru_indexed_count = cursor.fetchone()[0]
+        
+        if force_ru_download or ru_indexed_count == 0:
+            ru_routes_to_index = []
+            ru_cache_file = os.path.join(DATA_DIR, "last-good", "ru_prefixes.txt")
+            ru_added_date = "27.08.2026, 09:50:19"
+            if os.path.exists(ru_cache_file):
+                with open(ru_cache_file, "r") as f:
+                    for l in f:
+                        p = l.strip()
+                        if p and "/" in p:
+                            try:
+                                plen = int(p.split("/")[1])
+                                n_addrs = 1 << (32 - plen)
+                                ru_routes_to_index.append((
+                                    p,
+                                    n_addrs,
+                                    f"{n_addrs:,} IP",
+                                    "RU Pool",
+                                    "65000:643 (RU)",
+                                    "Russian Segment",
+                                    ru_added_date,
+                                    "wireguard1",
+                                    0
+                                ))
+                            except Exception:
+                                pass
+            if ru_routes_to_index:
+                cursor.execute("DELETE FROM routes_index WHERE is_custom = 0")
+                cursor.executemany("""
+                    INSERT OR REPLACE INTO routes_index (prefix, addresses_count, addresses_formatted, category, community, source_name, date_added, gateway, is_custom)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, ru_routes_to_index)
+
+        # Update custom routes in index
+        custom_routes_to_index = []
+        for net, comm, stype in filtered_custom:
+            s_match = next((s for s in sources if s["type"] == stype and s["community"] == comm), None)
+            s_date = s_match["last_update"] if (s_match and s_match["last_update"]) else now_str
+            s_name = s_match["name"] if s_match else "Custom Rule"
+            
+            if stype == "DOMAIN":
+                cat_name = f"Domain ({s_name})"
+            elif stype == "ASN":
+                cat_name = f"ASN ({s_name})"
+            elif stype == "COUNTRY":
+                cat_name = f"{s_match['value'] if s_match else 'Country'} Pool"
+            elif stype == "PREFIX":
+                cat_name = "Custom CIDR"
+            elif stype == "EXTERNAL_URL":
+                cat_name = "URL List"
+            else:
+                cat_name = f"Custom ({stype})"
+
+            custom_routes_to_index.append((
+                str(net),
+                net.num_addresses,
+                f"{net.num_addresses:,} IP",
+                cat_name,
+                comm,
+                s_name,
+                s_date,
+                "wireguard1",
+                1
+            ))
+
+        cursor.execute("DELETE FROM routes_index WHERE is_custom = 1")
+        if custom_routes_to_index:
+            cursor.executemany("""
+                INSERT OR REPLACE INTO routes_index (prefix, addresses_count, addresses_formatted, category, community, source_name, date_added, gateway, is_custom)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, custom_routes_to_index)
                 
         reload_bird()
         
@@ -798,13 +867,20 @@ def check_ip_in_feed(ip_str):
         return {"error": "Некорректный IPv4-адрес"}
         
     cache_file = os.path.join(DATA_DIR, "last-good", "ru_prefixes.txt")
+    matching_prefixes = []
     if os.path.exists(cache_file):
         with open(cache_file, "r") as f:
-            for l in f:
-                p = l.strip()
-                if p:
-                    net = is_valid_ipv4_net(p)
+            for line in f:
+                line = line.strip()
+                if line:
+                    net = is_valid_ipv4_net(line)
                     if net and target_ip in net:
-                        return {"ip": ip_str, "found": True, "matching_prefix": p}
-                        
-    return {"ip": ip_str, "found": False}
+                        matching_prefixes.append(str(net))
+                        break
+
+    return {
+        "ip": str(target_ip),
+        "found": len(matching_prefixes) > 0,
+        "matching_prefix": matching_prefixes[0] if matching_prefixes else None,
+        "feed": "Russian IPv4 Feed (RU)" if matching_prefixes else "Вне российского фида"
+    }
