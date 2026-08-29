@@ -155,8 +155,15 @@ async def api_telemetry(user: dict = Depends(check_credentials)):
     return {"peer": peer_info, "masks": get_mask_distribution()}
 
 @app.get("/api/routes")
-async def api_routes(q: str = Query("", alias="q"), page: int = Query(1), limit: int = Query(50), user: dict = Depends(check_credentials)):
-    return search_routes_in_cache(query=q, page=page, limit=limit)
+async def api_routes(
+    q: str = Query("", alias="q"),
+    page: int = Query(1),
+    limit: int = Query(50),
+    sort_by: str = Query("default"),
+    sort_order: str = Query("asc"),
+    user: dict = Depends(check_credentials)
+):
+    return search_routes_in_cache(query=q, page=page, limit=limit, sort_by=sort_by, sort_order=sort_order)
 
 @app.get("/api/sources/{source_id}/prefixes")
 async def api_source_prefixes(source_id: int, user: dict = Depends(check_credentials)):
