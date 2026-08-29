@@ -96,17 +96,6 @@ def resolve_country_input(q):
         return (cc, f"Country {cc}", 1000)
     return (q[:2].upper(), q, 1000)
 
-def format_ip_human(num):
-    if not num:
-        return "0 IP"
-    if num >= 1_000_000:
-        val = round(num / 1_000_000, 1)
-        return f"~{val:g} млн IP"
-    elif num >= 1_000:
-        val = round(num / 1_000, 1)
-        return f"{val:g} тыс. IP"
-    return f"{num} IP"
-
 def update_cloudflare_ranges():
     global CLOUDFLARE_NETWORKS
     try:
@@ -126,6 +115,17 @@ def update_cloudflare_ranges():
             log_msg(f"Обновлены официальные диапазоны Cloudflare: {len(fetched)} блоков", "INFO")
     except Exception as e:
         log_msg(f"Используются базовые диапазоны Cloudflare: {e}", "INFO")
+
+def format_ip_human(num):
+    if not num:
+        return "0 IP"
+    if num >= 1_000_000:
+        val = round(num / 1_000_000, 1)
+        return f"~{val:g} млн IP"
+    elif num >= 1_000:
+        val = round(num / 1_000, 1)
+        return f"{val:g} тыс. IP"
+    return f"{num} IP"
 
 def is_cdn_anycast(ip_obj):
     for net in CLOUDFLARE_NETWORKS:
@@ -314,6 +314,7 @@ def universal_inspect(query):
             except Exception:
                 pass
                 
+        # Total sum over all prefixes
         full_total = sum(ipaddress.IPv4Network(p).num_addresses for p in prefixes if is_valid_ipv4_net(p))
 
         return {
@@ -488,8 +489,6 @@ def universal_inspect(query):
         "asn_digits": asn_digits,
         "asn_full": asn_raw,
         "asn_prefix_count": asn_prefix_count,
-        "total_ips": len(resolved_ips),
-        "total_ips_human": format_ip_human(len(resolved_ips)),
         "is_cdn": is_cdn,
         "is_cloudflare": is_cf,
         "in_ru_feed": in_ru_feed,
@@ -682,6 +681,11 @@ def rebuild_all(force_ru_download=False):
                             f.write(f"route {p} blackhole {{ bgp_community.add((65000, 1000)); bgp_community.add((65000, 900)); bgp_community.add((65000, 643)); }};\n")
                 else:
                     raw_external_count = s["prefix_count"] or 8651
+                cursor.execute("""
+                    UPDATE sources
+                    SET prefix_count = ?, last_update = ?, status = ?, error = ?
+                    WHERE id = ?
+                """, (raw_external_count, now_str, "active", None, s_id))
             elif s_type == "COUNTRY":
                 try:
                     prefixes = fetch_country_prefixes(s_val, force_download=force_ru_download)
@@ -722,7 +726,7 @@ def rebuild_all(force_ru_download=False):
 
         exclusion_nets = []
         for exc in exclusions:
-            net = is_valid_ipv4_net(exc["value"] if "/" in exc["value"] else f"{exc['value']}/32")
+            net = is_valid_ipv4_net(exc["value"] if "/" in exc["value"] else f"{exc[value]}/32")
             if net:
                 exclusion_nets.append(net)
                 
@@ -736,6 +740,7 @@ def rebuild_all(force_ru_download=False):
         with open(custom_conf_path, "w") as f:
             f.write("# Generated Custom Routes Feed\n")
             for net, comm, stype in sorted(filtered_custom, key=lambda x: str(x[0])):
+                # Extract community tag number (e.g. 65000:804 -> 804)
                 comm_tag = 1000
                 if ":" in comm:
                     try:
@@ -793,20 +798,13 @@ def check_ip_in_feed(ip_str):
         return {"error": "Некорректный IPv4-адрес"}
         
     cache_file = os.path.join(DATA_DIR, "last-good", "ru_prefixes.txt")
-    matching_prefixes = []
     if os.path.exists(cache_file):
         with open(cache_file, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    net = is_valid_ipv4_net(line)
+            for l in f:
+                p = l.strip()
+                if p:
+                    net = is_valid_ipv4_net(p)
                     if net and target_ip in net:
-                        matching_prefixes.append(str(net))
-                        break
+                        return {"ip": ip_str, "found": True, "matching_prefix": p}
                         
-    return {
-        "ip": str(target_ip),
-        "found": len(matching_prefixes) > 0,
-        "matching_prefix": matching_prefixes[0] if matching_prefixes else None,
-        "feed": "Russian IPv4 Feed (RU)" if matching_prefixes else "Вне российского фида"
-    }
+    return {"ip": ip_str, "found": False}
