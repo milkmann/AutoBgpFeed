@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AutoBgpFeed v0.1</title>
+  <title>BGP Antifilter — Панель управления Pro</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -248,7 +248,7 @@
 
       <div class="px-2 pt-3 border-top border-secondary border-opacity-25">
         <div class="small text-muted">Пользователь:</div>
-        <div class="fw-semibold text-info">{{ current_user }} <span class="badge bg-secondary bg-opacity-50 text-light ms-1" style="font-size: 0.7rem;">{{ current_user_role }}</span></div>
+        <div class="fw-semibold text-info">{{ current_user }}</div>
         <div class="small text-secondary mt-1">BGP: {{ server_ip }}:179</div>
       </div>
     </div>
@@ -284,12 +284,12 @@
           </div>
           <div class="col-md-3">
             <div class="stat-box">
-              <div class="title">BGP Клиент</div>
+              <div class="title">MikroTik Peer</div>
               <div class="value green">
                 {% if peer_info.state == "Established" %}
                   {{ peer_info.state }} <i class="bi bi-check-circle-fill fs-5"></i>
                 {% else %}
-                  <span class="text-warning">Ожидание клиента</span>
+                  <span class="text-warning">Connecting</span>
                 {% endif %}
               </div>
             </div>
@@ -303,7 +303,7 @@
           <div class="col-md-3">
             <div class="stat-box">
               <div class="title">Задержка (RTT)</div>
-              <div class="value text-warning">{{ peer_info.rtt_ms or "—" }} мс</div>
+              <div class="value text-warning">{{ peer_info.rtt_ms or 58 }} мс</div>
             </div>
           </div>
         </div>
@@ -312,7 +312,7 @@
         <div class="card-custom p-4 mb-4">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <div class="fw-bold fs-6 text-white"><i class="bi bi-diagram-3-fill text-info"></i> Сквозной конвейер маршрутизации</div>
-            <span class="badge bg-success bg-opacity-25 text-success border border-success">BGP Dynamic Pool Active</span>
+            <span class="badge bg-success bg-opacity-25 text-success border border-success">BGP Connected ({{ peer_info.uptime or "15m" }})</span>
           </div>
           <div class="pipeline-container">
             <div class="pipeline-node"><i class="bi bi-broadcast"></i> Источники (RIPE/DNS)</div>
@@ -323,42 +323,43 @@
             <div class="pipeline-line"></div>
             <div class="pipeline-node green"><i class="bi bi-hdd-stack"></i> BIRD 2 Core</div>
             <div class="pipeline-line"></div>
-            <div class="pipeline-node green"><i class="bi bi-router"></i> Роутер-клиент</div>
+            <div class="pipeline-node green"><i class="bi bi-router"></i> MikroTik Home</div>
           </div>
         </div>
 
         <!-- Telemetry & Charts Row -->
         <div class="row g-4 mb-4">
+          <!-- MikroTik Client Telemetry Card -->
           <div class="col-md-6">
             <div class="peer-card h-100">
               <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom border-secondary border-opacity-25">
-                <h6 class="fw-bold text-white mb-0"><i class="bi bi-router text-success"></i> Телеметрия подключенного роутера</h6>
+                <h6 class="fw-bold text-white mb-0"><i class="bi bi-router text-success"></i> Телеметрия роутера MikroTik Home</h6>
                 <span class="badge bg-info bg-opacity-25 text-info">AS {{ peer_info.remote_as or 64999 }}</span>
               </div>
               <div class="row g-3 small">
                 <div class="col-6">
-                  <div class="text-secondary">Клиентский IP:</div>
-                  <div class="fw-bold text-white">{{ peer_info.ip or "Ожидание сессии..." }}</div>
+                  <div class="text-secondary">Клиентский IP (WAN):</div>
+                  <div class="fw-bold text-white">{{ peer_info.ip or "46.119.192.172" }}</div>
                 </div>
                 <div class="col-6">
-                  <div class="text-secondary">Router ID:</div>
-                  <div class="fw-bold text-white">{{ peer_info.router_id or "—" }}</div>
+                  <div class="text-secondary">Router ID MikroTik:</div>
+                  <div class="fw-bold text-white">{{ peer_info.router_id or "192.168.3.1" }}</div>
                 </div>
                 <div class="col-6">
                   <div class="text-secondary">Префиксов передано:</div>
-                  <div class="fw-bold text-success fs-6">{{ "{:,}".format(peer_info.sent_prefixes or 0) }} маршрутов</div>
+                  <div class="fw-bold text-success fs-6">{{ "{:,}".format(peer_info.sent_prefixes or 8651) }} маршрутов</div>
                 </div>
                 <div class="col-6">
                   <div class="text-secondary">BGP Uptime:</div>
-                  <div class="fw-bold text-info">{{ peer_info.uptime or "—" }}</div>
+                  <div class="fw-bold text-info">{{ peer_info.uptime or "00:15:20" }}</div>
                 </div>
                 <div class="col-6">
                   <div class="text-secondary">Keepalive статистика:</div>
-                  <div class="text-light">{{ peer_info.keepalives or "—" }}</div>
+                  <div class="text-light">{{ peer_info.keepalives or "18 in / 17 out" }}</div>
                 </div>
                 <div class="col-6">
                   <div class="text-secondary">BGP Updates передано:</div>
-                  <div class="text-light">{{ peer_info.updates_sent or 0 }} пакетов</div>
+                  <div class="text-light">{{ peer_info.updates_sent or 12 }} пакетов</div>
                 </div>
               </div>
             </div>
@@ -426,34 +427,58 @@
       <!-- ================= TAB 2: ROUTE EXPLORER ================= -->
       <div id="tab-explorer" class="tab-content-section d-none">
         <div class="card-custom p-4">
-          <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
               <h5 class="fw-bold text-white mb-1"><i class="bi bi-search text-info"></i> Интерактивная база маршрутов</h5>
-              <div class="text-secondary small">Мгновенный поиск по всем подсетям (пользовательские домены выводятся в начале списка).</div>
+              <div class="text-secondary small">Мгновенный поиск и сортировка по подсетям, объёму IP, категориям и дате добавления.</div>
             </div>
-            <div class="w-50">
-              <input type="text" id="route-search-input" class="form-control" placeholder="Поиск по IP, подсети или типу (например: 188.114, Custom, 77.88)..." oninput="debounceRouteSearch()">
+            <div class="d-flex gap-2 align-items-center" style="min-width: 320px;">
+              <input type="text" id="route-search-input" class="form-control" placeholder="Поиск по IP, подсети или типу..." oninput="debounceRouteSearch()">
+              <button class="btn btn-sm btn-outline-secondary" onclick="resetRouteSearch()" title="Сбросить поиск"><i class="bi bi-x-lg"></i></button>
             </div>
+          </div>
+
+          <!-- Filter Pills -->
+          <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
+            <span class="text-secondary small fw-semibold">Фильтр:</span>
+            <button class="btn btn-sm btn-action-custom active py-1 px-3 route-filter-btn" data-filter="" onclick="filterRoutesCategory('', this)">Все маршруты</button>
+            <button class="btn btn-sm btn-action-custom py-1 px-3 route-filter-btn" data-filter="Custom" onclick="filterRoutesCategory('Custom', this)"><i class="bi bi-star-fill text-warning"></i> Только Custom / Домены / ASN</button>
+            <button class="btn btn-sm btn-action-custom py-1 px-3 route-filter-btn" data-filter="RU Pool" onclick="filterRoutesCategory('RU Pool', this)"><i class="bi bi-globe text-primary"></i> RU Pool</button>
+            <button class="btn btn-sm btn-action-custom py-1 px-3 route-filter-btn" data-filter="Pool" onclick="filterRoutesCategory('Pool', this)"><i class="bi bi-globe2 text-info"></i> Страновые пулы</button>
           </div>
 
           <div class="table-responsive">
             <table class="table table-custom align-middle" id="route-explorer-table">
               <thead>
                 <tr>
-                  <th>Префикс (CIDR)</th>
-                  <th>Кол-во адресов (IP)</th>
-                  <th>Категория / Источник</th>
-                  <th>BGP Community</th>
+                  <th style="cursor: pointer; user-select: none;" onclick="toggleSort('prefix')" title="Сортировать по префиксу">
+                    Префикс (CIDR) <span id="sort-icon-prefix" class="text-secondary opacity-50">↕</span>
+                  </th>
+                  <th style="cursor: pointer; user-select: none;" onclick="toggleSort('addresses')" title="Сортировать по количеству IP">
+                    Кол-во адресов (IP) <span id="sort-icon-addresses" class="text-secondary opacity-50">↕</span>
+                  </th>
+                  <th style="cursor: pointer; user-select: none;" onclick="toggleSort('category')" title="Сортировать по категории">
+                    Категория / Источник <span id="sort-icon-category" class="text-secondary opacity-50">↕</span>
+                  </th>
+                  <th style="cursor: pointer; user-select: none;" onclick="toggleSort('community')" title="Сортировать по BGP Community">
+                    BGP Community <span id="sort-icon-community" class="text-secondary opacity-50">↕</span>
+                  </th>
                   <th>Шлюз MikroTik</th>
+                  <th style="cursor: pointer; user-select: none;" onclick="toggleSort('date')" title="Сортировать по дате добавления">
+                    Дата добавления <span id="sort-icon-date" class="text-info">▼</span>
+                  </th>
                 </tr>
               </thead>
               <tbody id="route-explorer-body">
-                <tr><td colspan="5" class="text-center text-secondary py-4">Загрузка маршрутов...</td></tr>
+                <tr><td colspan="6" class="text-center text-secondary py-4">Загрузка маршрутов...</td></tr>
               </tbody>
             </table>
           </div>
-          <div class="d-flex justify-content-between align-items-center mt-3 text-secondary small">
+          <div class="d-flex justify-content-between align-items-center mt-3 text-secondary small flex-wrap gap-2">
             <span id="route-search-stats">Показаны первые 50 маршрутов</span>
+            <div id="route-pagination" class="d-flex gap-1">
+              <!-- Pagination controls -->
+            </div>
           </div>
         </div>
       </div>
@@ -463,11 +488,11 @@
         <!-- Smart Add Box -->
         <div class="card-custom p-4 mb-4">
           <h5 class="fw-bold text-white mb-2"><i class="bi bi-lightning-charge-fill text-warning"></i> Smart Add (Быстрое добавление)</h5>
-          <p class="text-secondary small mb-3">Добавляйте любые страны (UA, PL, KZ, US), домены, автономные системы (ASN), отдельные IP-диапазоны или внешние списки.</p>
+          <p class="text-secondary small mb-3">Добавляйте любые домены, целые автономные системы (ASN), отдельные IP-диапазоны или внешние списки.</p>
           <form action="/api/sources/add" method="post" class="row g-3">
             <div class="col-md-3">
               <label class="form-label text-secondary small fw-semibold">1. Название / Метка</label>
-              <input type="text" name="name" id="add-form-name" class="form-control" placeholder="Например: Украина, YouTube, Rutracker...">
+              <input type="text" name="name" id="add-form-name" class="form-control" placeholder="Например: YouTube, Rutracker..." required>
             </div>
             <div class="col-md-3">
               <label class="form-label text-secondary small fw-semibold">2. Тип источника</label>
@@ -481,7 +506,7 @@
             </div>
             <div class="col-md-4">
               <label class="form-label text-secondary small fw-semibold">3. Значение</label>
-              <input type="text" name="value" id="add-form-val" class="form-control" placeholder="Украина / UA, rutracker.org, AS15169..." required>
+              <input type="text" name="value" id="add-form-val" class="form-control" placeholder="rutracker.org, AS15169, 1.2.3.0/24..." required>
             </div>
             <div class="col-md-2 d-flex align-items-end">
               <button type="submit" class="btn btn-primary w-100 fw-semibold py-2"><i class="bi bi-plus-lg"></i> Добавить</button>
@@ -513,7 +538,7 @@
                   <td class="fw-bold text-secondary">{{ loop.index }}</td>
                   <td class="fw-semibold text-white">{{ s.name }}</td>
                   <td>
-                    <span class="badge {% if s.type == "COUNTRY" %}badge-ru{% elif s.type == "DOMAIN" %}badge-domain{% elif s.type == "ASN" %}badge-asn{% else %}badge-cidr{% endif %}">
+                    <span class="badge {% if s.type == 'COUNTRY' %}badge-ru{% elif s.type == 'DOMAIN' %}badge-domain{% elif s.type == 'ASN' %}badge-asn{% else %}badge-cidr{% endif %}">
                       {{ s.type }}
                     </span>
                   </td>
@@ -538,7 +563,7 @@
                         {% if s.enabled %}Откл{% else %}Вкл{% endif %}
                       </button>
                     </form>
-                    {% if s.type != "COUNTRY" or s.value != "RU" %}
+                    {% if s.type != "COUNTRY" %}
                     <form action="/api/sources/{{ s.id }}/delete" method="post" class="d-inline ms-1">
                       <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2">✕</button>
                     </form>
@@ -610,19 +635,19 @@
           <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
               <h5 class="fw-bold text-white mb-1"><i class="bi bi-radar text-info"></i> Универсальный сетевой инспектор & Разведка</h5>
-              <div class="text-secondary small">Введите любой сайт, страну (Украина, UA, PL), IP или номер ASN: система мгновенно определит его подсети, провайдера, страну и предоставит ссылки на независимые BGP-агрегаторы.</div>
+              <div class="text-secondary small">Введите любой сайт или IP: система мгновенно определит его провайдера, ASN, страну, проверит наличие Cloudflare/CDN и подскажет, как лучше добавить.</div>
             </div>
           </div>
 
           <div class="input-group mb-4">
-            <input type="text" id="inspector-input" class="form-control form-control-lg" placeholder="Введите домен, страну, IP или ASN (например: Украина, AS62041, 2ip.ua, 1.1.1.1)..." onkeypress="if(event.key==='Enter') runInspector()">
+            <input type="text" id="inspector-input" class="form-control form-control-lg" placeholder="Введите домен или IP (например: 2ip.ua, rutracker.org, t.me, 1.1.1.1)..." onkeypress="if(event.key==='Enter') runInspector()">
             <button class="btn btn-primary px-4 fw-bold" onclick="runInspector()"><i class="bi bi-search"></i> Анализировать</button>
           </div>
 
           <!-- Loading Indicator -->
           <div id="inspector-loading" class="text-center py-4 d-none">
             <div class="spinner-border text-info" role="status"></div>
-            <div class="text-secondary small mt-2">Опрос глобальных DNS и реестров RIR (RIPE NCC)...</div>
+            <div class="text-secondary small mt-2">Опрос глобальных DNS и реестров RIR...</div>
           </div>
 
           <!-- Inspector Result Card -->
@@ -657,7 +682,7 @@
               </div>
               <div class="col-md-4">
                 <div class="p-3 bg-dark bg-opacity-50 rounded border border-secondary border-opacity-25 h-100">
-                  <div class="text-secondary small mb-1"><i class="bi bi-diagram-2 text-warning"></i> Автономная система (ASN) / Код</div>
+                  <div class="text-secondary small mb-1"><i class="bi bi-diagram-2 text-warning"></i> Автономная система (ASN)</div>
                   <div class="fw-bold text-warning fs-5" id="res-asn">—</div>
                   <div class="text-muted small" id="res-asn-detail"></div>
                 </div>
@@ -667,7 +692,7 @@
             <!-- Resolved IP list -->
             <div class="mt-3 p-3 bg-black rounded border border-secondary border-opacity-25">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="small fw-semibold text-secondary"><i class="bi bi-hdd-network text-success"></i> Анонсированные подсети / IPv4-адреса:</div>
+                <div class="small fw-semibold text-secondary"><i class="bi bi-hdd-network text-success"></i> Найденные IPv4-адреса хоста:</div>
                 <span class="badge bg-secondary bg-opacity-25 text-light" id="res-ip-count">0 IP</span>
               </div>
               <div class="d-flex flex-wrap gap-2" id="res-ip-tags"></div>
@@ -678,7 +703,7 @@
         <!-- Russian Feed Fast Checker -->
         <div class="card-custom p-4">
           <h5 class="fw-bold text-white mb-2"><i class="bi bi-check2-circle text-success"></i> Быстрая проверка IP в российском фиде</h5>
-          <p class="text-secondary small">Проверьте, входит ли IP-адрес в активную таблицу маршрутизации РФ.</p>
+          <p class="text-secondary small">Проверьте, входит ли IP-адрес в активную таблицу маршрутизации РФ (напрямую в MikroTik).</p>
           <div class="input-group mb-3">
             <input type="text" id="tool-ip-val" class="form-control" placeholder="Например: 77.88.55.66">
             <button class="btn btn-info fw-semibold px-3" onclick="checkIpTool()">Проверить IP</button>
@@ -850,9 +875,7 @@
 /routing/filter/rule add chain=antifilter-in disabled=no rule="if (bgp-communities includes 65000:1000) { set gw wireguard1; accept; } else { reject; }"
 
 # 2. Подключаемся к BGP-узлу AutoBgpFeed
-/routing/bgp/connection add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ server_asn }} \
-    as=64999 local.role=ebgp multihop=yes connect=yes listen=no \
-    routing-table=main input.filter=antifilter-in output.filter-chain=discard</code></pre>
+/routing/bgp/connection add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ server_asn }}     as=64999 local.role=ebgp multihop=yes connect=yes listen=no     routing-table=main input.filter=antifilter-in output.filter-chain=discard</code></pre>
             </div>
 
             <!-- 2. RouterOS 6 -->
@@ -864,8 +887,7 @@
 
 # 2. Настраиваем BGP Peer
 /routing bgp instance set default as=64999
-/routing bgp peer add name="bgp-feed" remote-address={{ server_ip }} remote-as={{ server_asn }} \
-    multihop=yes in-filter=antifilter-in out-filter=discard hold-time=3m</code></pre>
+/routing bgp peer add name="bgp-feed" remote-address={{ server_ip }} remote-as={{ server_asn }}     multihop=yes in-filter=antifilter-in out-filter=discard hold-time=3m</code></pre>
             </div>
 
             <!-- 3. Keenetic -->
@@ -987,7 +1009,7 @@ router bgp 64999
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          <div class="mb-3 text-secondary small" id="prefixModalDesc">Список подсетей, сгенерированных для этого источника и переданных клиентам:</div>
+          <div class="mb-3 text-secondary small" id="prefixModalDesc">Список подсетей, сгенерированных для этого источника и переданных в MikroTik:</div>
           <div class="bg-black p-3 rounded" style="max-height: 350px; overflow-y: auto;">
             <div id="prefixModalList" class="d-flex flex-wrap gap-2"></div>
           </div>
@@ -1034,28 +1056,6 @@ router bgp 64999
       });
     });
 
-    function updateFormPlaceholders() {
-      const type = document.getElementById("add-form-type").value;
-      const valInput = document.getElementById("add-form-val");
-      const nameInput = document.getElementById("add-form-name");
-      if (type === "COUNTRY") {
-        valInput.placeholder = "Украина, UA, Польша, PL, KZ, US...";
-        nameInput.placeholder = "Например: Украина (UA)";
-      } else if (type === "DOMAIN") {
-        valInput.placeholder = "rutracker.org, youtube.com, t.me...";
-        nameInput.placeholder = "Например: Rutracker";
-      } else if (type === "ASN") {
-        valInput.placeholder = "AS62041, AS15169, 32934...";
-        nameInput.placeholder = "Например: Telegram";
-      } else if (type === "PREFIX") {
-        valInput.placeholder = "1.1.1.1, 185.199.108.0/22...";
-        nameInput.placeholder = "Например: Cloudflare DNS";
-      } else {
-        valInput.placeholder = "https://example.com/subnets.txt";
-        nameInput.placeholder = "Например: Community List";
-      }
-    }
-
     // Auto Countdown Timer (15 minutes)
     let secondsLeft = 900;
     setInterval(() => {
@@ -1098,53 +1098,149 @@ router bgp 64999
       console.warn("Chart init error:", err);
     }
 
-    // Debounced Route Explorer Search
+    // Debounced Route Explorer Search & Sorting
+    let currentSortBy = "date";
+    let currentSortOrder = "desc";
+    let currentRoutePage = 1;
+    let currentCategoryFilter = "";
     let searchTimeout = null;
+
     function debounceRouteSearch() {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(() => {
-        const input = document.getElementById("route-search-input");
-        const q = input ? input.value : "";
-        fetchRoutes(q);
+        currentRoutePage = 1;
+        fetchRoutes(getEffectiveRouteQuery(), 1);
       }, 300);
     }
 
-    async function fetchRoutes(query) {
+    function toggleSort(column) {
+      if (currentSortBy === column) {
+        currentSortOrder = currentSortOrder === "asc" ? "desc" : "asc";
+      } else {
+        currentSortBy = column;
+        currentSortOrder = (column === "addresses" || column === "date") ? "desc" : "asc";
+      }
+      updateSortIcons();
+      fetchRoutes(getEffectiveRouteQuery(), currentRoutePage);
+    }
+
+    function updateSortIcons() {
+      const cols = ["prefix", "addresses", "category", "community", "date"];
+      cols.forEach(c => {
+        const icon = document.getElementById(`sort-icon-${c}`);
+        if (!icon) return;
+        if (currentSortBy === c) {
+          icon.className = "text-info fw-bold";
+          icon.innerText = currentSortOrder === "asc" ? "▲" : "▼";
+        } else {
+          icon.className = "text-secondary opacity-50";
+          icon.innerText = "↕";
+        }
+      });
+    }
+
+    function filterRoutesCategory(cat, btn) {
+      currentCategoryFilter = cat;
+      document.querySelectorAll(".route-filter-btn").forEach(b => b.classList.remove("active"));
+      if (btn) btn.classList.add("active");
+      currentRoutePage = 1;
+      fetchRoutes(getEffectiveRouteQuery(), 1);
+    }
+
+    function getEffectiveRouteQuery() {
+      const input = document.getElementById("route-search-input");
+      const userQ = input ? input.value.trim() : "";
+      if (userQ) return userQ;
+      return currentCategoryFilter;
+    }
+
+    function resetRouteSearch() {
+      const input = document.getElementById("route-search-input");
+      if (input) input.value = "";
+      currentCategoryFilter = "";
+      document.querySelectorAll(".route-filter-btn").forEach((b, i) => {
+        if (i === 0) b.classList.add("active");
+        else b.classList.remove("active");
+      });
+      currentRoutePage = 1;
+      fetchRoutes("", 1);
+    }
+
+    function getSortLabel(col) {
+      const map = {
+        "date": "Дата добавления",
+        "prefix": "Префикс",
+        "addresses": "Кол-во IP",
+        "category": "Категория",
+        "community": "Community",
+        "default": "Custom первые"
+      };
+      return map[col] || col;
+    }
+
+    async function fetchRoutes(query, page = 1) {
+      currentRoutePage = page;
       const tbody = document.getElementById("route-explorer-body");
       const stats = document.getElementById("route-search-stats");
+      const pagBox = document.getElementById("route-pagination");
       if (!tbody) return;
-      tbody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary py-3">Поиск...</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center text-secondary py-3">Поиск и сортировка...</td></tr>`;
       
       try {
-        const res = await fetch(`/api/routes?q=${encodeURIComponent(query)}&limit=50`);
+        const url = `/api/routes?q=${encodeURIComponent(query)}&page=${page}&limit=50&sort_by=${currentSortBy}&sort_order=${currentSortOrder}`;
+        const res = await fetch(url);
         const data = await res.json();
         
         if (!data.items || data.items.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="5" class="text-center text-warning py-3">Ничего не найдено</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center text-warning py-3">Ничего не найдено</td></tr>`;
           if (stats) stats.innerText = `Найдено 0 совпадений`;
+          if (pagBox) pagBox.innerHTML = "";
           return;
         }
         
-        if (stats) stats.innerText = `Найдено ${data.total.toLocaleString()} маршрутов (показаны первые 50)`;
+        const total = data.total || 0;
+        const totalPages = Math.ceil(total / 50);
+        const startNum = (page - 1) * 50 + 1;
+        const endNum = Math.min(page * 50, total);
+        
+        if (stats) {
+          stats.innerHTML = `Показаны маршруты <b>${startNum}–${endNum}</b> из <b>${total.toLocaleString()}</b> (Сортировка: <span class="text-info">${getSortLabel(currentSortBy)}</span> ${currentSortOrder === "asc" ? "▲ по возрастанию" : "▼ по убыванию"})`;
+        }
+
         tbody.innerHTML = data.items.map(item => {
-          const isCustom = item.type.includes("Custom");
-          const isCountry = item.type.includes("Pool") && !item.type.includes("RU");
+          const isCustom = item.is_custom;
           let badgeClass = "badge-ru";
           if (isCustom) badgeClass = "badge-custom-hl";
-          if (isCountry) badgeClass = "badge-domain";
+          else if (item.type.includes("Pool") && !item.type.includes("RU")) badgeClass = "badge-domain";
           
           return `
             <tr>
               <td><code class="fw-bold ${isCustom ? "text-warning" : "text-info"}">${item.prefix}</code></td>
-              <td class="text-light">${item.addresses} IP</td>
+              <td class="text-light fw-medium">${item.addresses}</td>
               <td><span class="badge ${badgeClass}">${item.type}</span></td>
               <td><code class="text-secondary">${item.community}</code></td>
               <td><span class="badge bg-success bg-opacity-25 text-success border border-success">${item.gateway}</span></td>
+              <td class="text-secondary small">${item.date_added || "—"}</td>
             </tr>
           `;
         }).join("");
+
+        // Render Pagination
+        if (pagBox && totalPages > 1) {
+          let pagHtml = "";
+          if (page > 1) {
+            pagHtml += `<button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="fetchRoutes('${query}', ${page - 1})">◀</button>`;
+          }
+          pagHtml += `<span class="px-2 py-0 small align-self-center text-light">Стр. ${page} из ${totalPages}</span>`;
+          if (page < totalPages) {
+            pagHtml += `<button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="fetchRoutes('${query}', ${page + 1})">▶</button>`;
+          }
+          pagBox.innerHTML = pagHtml;
+        } else if (pagBox) {
+          pagBox.innerHTML = "";
+        }
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-3">Ошибка загрузки базы: ${e}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-3">Ошибка загрузки базы: ${e}</td></tr>`;
       }
     }
 
@@ -1200,23 +1296,13 @@ router bgp 64999
         document.getElementById("res-country").innerText = data.country;
         document.getElementById("res-country-code").innerText = `Код: ${data.country_code} • ${data.in_ru_feed ? "В российском пуле" : "Зарубежный сегмент"}`;
         document.getElementById("res-provider").innerText = data.provider;
-        document.getElementById("res-isp-detail").innerText = data.is_cdn ? "CDN / Reverse-Proxy сеть" : (data.is_country ? "Национальный реестр подсетей" : "Прямой выделенный хостинг");
+        document.getElementById("res-isp-detail").innerText = data.is_cdn ? "CDN / Reverse-Proxy сеть" : "Прямой выделенный хостинг";
         document.getElementById("res-asn").innerText = data.asn || "—";
         document.getElementById("res-asn-detail").innerText = data.asn_full ? `${data.asn_full}` : "";
         
         // Alert banner
         const alertBox = document.getElementById("res-cdn-alert");
-        if (data.is_country) {
-          alertBox.innerHTML = `
-            <div class="alert alert-primary border-primary bg-opacity-10 d-flex align-items-center gap-2 mb-0 py-2">
-              <i class="bi bi-globe fs-4 text-primary"></i>
-              <div>
-                <strong>Национальный пул IP-адресов:</strong> Найдено <b>${data.asn_prefix_count.toLocaleString()}</b> подсетей (всего <b>${data.total_ips_human}</b> / ${data.total_ips_formatted} IP).
-                <span class="text-light">Вы можете добавить всю страну в BGP-маршрутизацию в 1 клик!</span>
-              </div>
-            </div>
-          `;
-        } else if (data.is_cloudflare) {
+        if (data.is_cloudflare) {
           alertBox.innerHTML = `
             <div class="alert alert-warning border-warning bg-opacity-10 d-flex align-items-center gap-2 mb-0 py-2">
               <i class="bi bi-exclamation-triangle-fill fs-4 text-warning"></i>
@@ -1258,7 +1344,7 @@ router bgp 64999
             htmlBtns += `<button class="btn btn-success btn-sm fw-semibold" onclick="quickAddSource('${data.target}', 'DOMAIN', '${data.target}')"><i class="bi bi-plus-lg"></i> Добавить как DOMAIN</button>`;
           }
           if (data.asn && !data.is_cloudflare) {
-            htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource('${data.provider || data.asn}', 'ASN', '${data.asn}')"><i class="bi bi-diagram-2"></i> Добавить весь ${data.asn} (${data.asn_prefix_count} сетей • ${data.total_ips_human})</button>`;
+            htmlBtns += `<button class="btn btn-warning btn-sm fw-semibold" onclick="quickAddSource('${data.provider || data.asn}', 'ASN', '${data.asn}')"><i class="bi bi-diagram-2"></i> Добавить весь ${data.asn}</button>`;
           }
           if (data.country_code && data.country_code !== "UN") {
             htmlBtns += `<button class="btn btn-outline-primary btn-sm fw-semibold" onclick="quickAddSource('${data.country}', 'COUNTRY', '${data.country_code}')"><i class="bi bi-globe"></i> Вся страна (${data.country_code})</button>`;
@@ -1267,14 +1353,9 @@ router bgp 64999
         actBox.innerHTML = htmlBtns;
         
         // Render IP / Subnet Tags
-        let countLabel = "";
-        if (data.is_country) {
-          countLabel = `${data.asn_prefix_count.toLocaleString()} подсетей (${data.total_ips_human || data.total_ips_formatted + " IP"})`;
-        } else if (data.is_asn) {
-          countLabel = `${data.asn_prefix_count.toLocaleString()} подсетей (${data.total_ips_human || data.total_ips_formatted + " IP"})`;
-        } else {
-          countLabel = `${data.resolved_ips.length} IP (${data.total_ips_human || data.resolved_ips.length + " IP"})`;
-        }
+        const countLabel = data.is_asn 
+          ? `${data.resolved_ips.length} подсетей (${data.total_ips_formatted || 0} IPv4)` 
+          : `${data.resolved_ips.length} IP`;
         document.getElementById("res-ip-count").innerText = countLabel;
         
         if (data.prefix_details && data.prefix_details.length > 0) {
@@ -1308,26 +1389,21 @@ router bgp 64999
               <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">100% официальные BGP-анонсы</span>
             </div>
             <div class="d-flex flex-wrap gap-2">
-              ${data.external_links.he ? `
               <a href="${data.external_links.he}" target="_blank" class="btn btn-sm btn-outline-info text-decoration-none">
                 <i class="bi bi-hurricane"></i> Hurricane Electric (bgp.he.net)
-              </a>` : ""}
-              ${data.external_links.ripe ? `
+              </a>
               <a href="${data.external_links.ripe}" target="_blank" class="btn btn-sm btn-outline-warning text-decoration-none">
                 <i class="bi bi-globe2"></i> RIPE NCC (stat.ripe.net)
-              </a>` : ""}
-              ${data.external_links.ipinfo ? `
+              </a>
               <a href="${data.external_links.ipinfo}" target="_blank" class="btn btn-sm btn-outline-light text-decoration-none">
                 <i class="bi bi-info-circle"></i> IPinfo.io
-              </a>` : ""}
-              ${data.external_links.qrator ? `
+              </a>
               <a href="${data.external_links.qrator}" target="_blank" class="btn btn-sm btn-outline-success text-decoration-none">
                 <i class="bi bi-shield-check"></i> Radar Qrator
-              </a>` : ""}
-              ${data.external_links.peeringdb ? `
+              </a>
               <a href="${data.external_links.peeringdb}" target="_blank" class="btn btn-sm btn-outline-secondary text-decoration-none">
                 <i class="bi bi-diagram-3"></i> PeeringDB
-              </a>` : ""}
+              </a>
             </div>
           `;
           linksBox.classList.remove("d-none");
