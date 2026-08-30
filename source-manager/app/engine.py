@@ -720,7 +720,7 @@ def rebuild_all(force_ru_download=False):
 
         exclusion_nets = []
         for exc in exclusions:
-            net = is_valid_ipv4_net(exc["value"] if "/" in exc["value"] else f"{exc[value]}/32")
+            net = is_valid_ipv4_net(exc["value"] if "/" in exc["value"] else f"{exc['value']}/32")
             if net:
                 exclusion_nets.append(net)
                 
