@@ -601,7 +601,8 @@ def search_routes_in_cache(query="", page=1, limit=50, sort_by="default", sort_o
     order = "ASC" if sort_order.lower() == "asc" else "DESC"
     
     if sort_by == "date":
-        order_clause = f"ORDER BY is_custom DESC, date_added {order}, prefix ASC"
+        date_expr = "(SUBSTR(date_added, 7, 4) || '-' || SUBSTR(date_added, 4, 2) || '-' || SUBSTR(date_added, 1, 2) || ' ' || SUBSTR(date_added, 13))"
+        order_clause = f"ORDER BY is_custom DESC, {date_expr} {order}, prefix ASC"
     elif sort_by == "prefix":
         order_clause = f"ORDER BY prefix {order}"
     elif sort_by == "addresses":
@@ -742,23 +743,28 @@ def rebuild_all(force_ru_download=False):
                     except Exception:
                         pass
                 f.write(f"route {net} blackhole {{ bgp_community.add((65000, 1000)); bgp_community.add((65000, {comm_tag})); }};\n")
+                
+        # Populate routes_index with incremental Diff tracking
+        cursor.execute("SELECT prefix, date_added FROM routes_index WHERE is_custom = 0")
+        existing_ru_dates = {r[0]: r[1] for r in cursor.fetchall()}
+        ru_indexed_count = len(existing_ru_dates)
 
-        # Populate routes_index for lightning-fast search, sorting, and pagination
-        cursor.execute("SELECT COUNT(*) FROM routes_index WHERE is_custom = 0")
-        ru_indexed_count = cursor.fetchone()[0]
-        
         if force_ru_download or ru_indexed_count == 0:
             ru_routes_to_index = []
+            current_ru_prefixes = set()
             ru_cache_file = os.path.join(DATA_DIR, "last-good", "ru_prefixes.txt")
-            ru_added_date = "27.08.2026, 09:50:19"
+            
             if os.path.exists(ru_cache_file):
                 with open(ru_cache_file, "r") as f:
                     for l in f:
                         p = l.strip()
                         if p and "/" in p:
+                            current_ru_prefixes.add(p)
                             try:
                                 plen = int(p.split("/")[1])
                                 n_addrs = 1 << (32 - plen)
+                                # Preserve original discovery date, or assign now_str if newly discovered
+                                p_date = existing_ru_dates.get(p, now_str)
                                 ru_routes_to_index.append((
                                     p,
                                     n_addrs,
@@ -766,25 +772,33 @@ def rebuild_all(force_ru_download=False):
                                     "RU Pool",
                                     "65000:643 (RU)",
                                     "Russian Segment",
-                                    ru_added_date,
+                                    p_date,
                                     "wireguard1",
                                     0
                                 ))
                             except Exception:
                                 pass
             if ru_routes_to_index:
-                cursor.execute("DELETE FROM routes_index WHERE is_custom = 0")
+                # Remove withdrawn prefixes
+                withdrawn = set(existing_ru_dates.keys()) - current_ru_prefixes
+                if withdrawn:
+                    cursor.executemany("DELETE FROM routes_index WHERE prefix = ? AND is_custom = 0", [(p,) for p in withdrawn])
+                
                 cursor.executemany("""
                     INSERT OR REPLACE INTO routes_index (prefix, addresses_count, addresses_formatted, category, community, source_name, date_added, gateway, is_custom)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, ru_routes_to_index)
 
-        # Update custom routes in index
+        # Update custom routes in index with preserved discovery date
+        cursor.execute("SELECT prefix, date_added FROM routes_index WHERE is_custom = 1")
+        existing_custom_dates = {r[0]: r[1] for r in cursor.fetchall()}
+        
         custom_routes_to_index = []
         for net, comm, stype in filtered_custom:
+            p_str = str(net)
             s_match = next((s for s in sources if s["type"] == stype and s["community"] == comm), None)
-            s_date = s_match["last_update"] if (s_match and s_match["last_update"]) else now_str
             s_name = s_match["name"] if s_match else "Custom Rule"
+            p_date = existing_custom_dates.get(p_str, now_str)
             
             if stype == "DOMAIN":
                 cat_name = f"Domain ({s_name})"
@@ -800,13 +814,13 @@ def rebuild_all(force_ru_download=False):
                 cat_name = f"Custom ({stype})"
 
             custom_routes_to_index.append((
-                str(net),
+                p_str,
                 net.num_addresses,
                 f"{net.num_addresses:,} IP",
                 cat_name,
                 comm,
                 s_name,
-                s_date,
+                p_date,
                 "wireguard1",
                 1
             ))
@@ -817,7 +831,7 @@ def rebuild_all(force_ru_download=False):
                 INSERT OR REPLACE INTO routes_index (prefix, addresses_count, addresses_formatted, category, community, source_name, date_added, gateway, is_custom)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, custom_routes_to_index)
-                
+
         reload_bird()
         
         t_elapsed = round(time.time() - t_start, 3)
@@ -877,7 +891,7 @@ def check_ip_in_feed(ip_str):
                     if net and target_ip in net:
                         matching_prefixes.append(str(net))
                         break
-
+                        
     return {
         "ip": str(target_ip),
         "found": len(matching_prefixes) > 0,
