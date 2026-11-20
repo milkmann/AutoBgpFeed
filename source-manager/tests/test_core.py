@@ -109,7 +109,7 @@ def test_build_merge_exclusions_noop_and_rollback(isolated_env):
             "INSERT INTO sources (name, type, value, enabled, community, gateway) VALUES ('RU', 'COUNTRY', 'RU', 1, '65000:643', 'wireguard1')"
         )
         conn.execute(
-            "INSERT INTO sources (name, type, value, enabled, community, gateway) VALUES ('Custom', 'PREFIX', '195.0.0.0/24', 1, '65000:102', 'wireguard2warp')"
+            "INSERT INTO sources (name, type, value, enabled, community, gateway) VALUES ('Custom', 'PREFIX', '195.0.0.0/24', 1, '65000:102', 'wireguard2')"
         )
         conn.execute("INSERT INTO exclusions (name, type, value, enabled) VALUES ('ExcludeHost', 'PREFIX', '195.0.0.55/32', 1)")
     conn.close()
@@ -285,7 +285,7 @@ def test_api_auth_csrf_rbac_ratelimit_and_backup(isolated_env):
                     "name": "MyNet",
                     "source_type": "PREFIX",
                     "value": "8.8.4.0/24",
-                    "gateway": "wireguard2warp",
+                    "gateway": "wireguard2",
                     "community": "65000:102",
                     "csrf_token": csrf,
                 },
@@ -316,7 +316,7 @@ def test_api_auth_csrf_rbac_ratelimit_and_backup(isolated_env):
                 data={
                     "source_type": "DOMAIN",
                     "entries": "youtube.com\nOpenAI | openai.com\n# comment\n",
-                    "gateway": "wireguard2warp",
+                    "gateway": "wireguard2",
                     "community": "65000:102",
                     "cdn_mode": "auto",
                     "csrf_token": csrf,
@@ -338,7 +338,7 @@ def test_api_auth_csrf_rbac_ratelimit_and_backup(isolated_env):
         conn.close()
         assert added_row is not None
         assert added_row["name"] == "OpenAI"
-        assert added_row["gateway"] == "wireguard2warp"
+        assert added_row["gateway"] == "wireguard2"
         assert excl_cnt == 2
 
         with patch.object(main, "rebuild_all", return_value=1):
@@ -348,7 +348,7 @@ def test_api_auth_csrf_rbac_ratelimit_and_backup(isolated_env):
                     "name": "OpenAI Direct",
                     "source_type": "DOMAIN",
                     "value": "chatgpt.com",
-                    "gateway": "wireguard5warpzero",
+                    "gateway": "wireguard3",
                     "community": "65000:103",
                     "cdn_mode": "exact",
                     "csrf_token": csrf,
@@ -362,7 +362,7 @@ def test_api_auth_csrf_rbac_ratelimit_and_backup(isolated_env):
         conn.close()
         assert upd_row["name"] == "OpenAI Direct"
         assert upd_row["value"] == "chatgpt.com"
-        assert upd_row["gateway"] == "wireguard5warpzero"
+        assert upd_row["gateway"] == "wireguard3"
         assert upd_row["community"] == "65000:103"
         assert upd_row["cdn_mode"] == "exact"
 
@@ -426,3 +426,72 @@ def test_polling_log_filter():
     assert flt.filter(r_ok_health) is False
     assert flt.filter(r_err_health) is True
     assert flt.filter(r_login) is True
+
+
+def test_route_anomaly_error_sources_and_flags(isolated_env):
+    data_dir, _ = isolated_env
+    static_flags = Path(__file__).resolve().parents[1] / "static" / "flags"
+    assert (static_flags / "ua.svg").exists()
+    assert (static_flags / "ru.svg").exists()
+    assert (static_flags / "lt.svg").exists()
+    assert engine.resolve_country_input("Литва")[0] == "LT"
+
+    conn = db.get_db()
+    with conn:
+        conn.execute("DELETE FROM sources")
+        conn.execute(
+            "INSERT INTO sources (name, type, value, enabled, community, gateway, status, error) VALUES ('BrokenList', 'PREFIX', '1.1.1.0/24', 1, '65000:600', 'wireguard1', 'error', 'HTTP 502')"
+        )
+    conn.close()
+
+    fp = engine._config_fingerprint()
+    baseline_prefixes = [f"198.51.{i // 256}.{i % 256}/32" for i in range(120)]
+    confirmed_path = data_dir / "confirmed_snapshot.json"
+    confirmed_path.write_text(
+        json.dumps({"routes_sha256": "prevsha", "prefixes": baseline_prefixes, "config_fingerprint": fp}),
+        encoding="utf-8",
+    )
+
+    small_snap = {
+        "generated_at": "20.11.2026, 12:00:00",
+        "generated_at_unix": 1795180000,
+        "gen_duration": "0.1с",
+        "gen_duration_sec": 0.1,
+        "config_fingerprint": fp,
+        "routes_conf_text": "route 1.1.1.0/24 blackhole;\n",
+        "routes_sha256": "newsha",
+        "prefixes": ["1.1.1.0/24"] * 10,
+        "entries": [],
+        "source_results": [],
+        "provenance_sources": [],
+        "exclusions": [],
+        "degraded": False,
+        "degraded_reasons": [],
+        "stats": {
+            "raw_count": 0,
+            "custom_count": 10,
+            "pre_filter_count": 10,
+            "post_filter_count": 10,
+            "final_count": 10,
+            "exclusions_applied": 0,
+            "collapsed_duplicates": 0,
+        },
+    }
+
+    with patch.object(engine, "bird_configure", return_value="OK"), \
+         patch.object(engine, "bird_route_count", return_value=10):
+        engine.apply_snapshot(small_snap)
+
+    with patch.object(main, "_initial_build_task", return_value=None), \
+         patch.object(main, "bird_status", return_value={"up": True, "version": "2.15.1", "router_id": "198.51.100.10"}), \
+         patch.object(main, "bird_route_count", return_value=10), \
+         patch.object(main, "bird_peers", return_value=[]):
+        client = TestClient(main.app)
+        st = client.get("/status.json").json()
+        assert st["error_sources_count"] == 1
+        assert st["error_sources"] == ["BrokenList"]
+        assert st["anomaly"] is True
+        assert st["route_delta_pct"] < -40.0
+        metrics_txt = client.get("/metrics").text
+        assert "autobgp_error_sources 1" in metrics_txt
+        assert "autobgp_route_anomaly 1" in metrics_txt

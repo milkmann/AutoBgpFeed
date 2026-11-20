@@ -8,8 +8,8 @@ import sqlite3
 
 DEFAULT_VPN_PROFILES = [
     {"name": "wireguard1", "community": "65000:1000", "label": "Primary VPN (wireguard1)"},
-    {"name": "wireguard2warp", "community": "65000:102", "label": "WARP (wireguard2warp)"},
-    {"name": "wireguard5warpzero", "community": "65000:103", "label": "WARP Zero (wireguard5warpzero)"},
+    {"name": "wireguard2", "community": "65000:102", "label": "Secondary VPN (wireguard2)"},
+    {"name": "wireguard3", "community": "65000:103", "label": "VPN Tunnel 3 (wireguard3)"},
 ]
 
 DEFAULT_SETTINGS = {
@@ -135,7 +135,11 @@ def init_db() -> None:
                     degraded INTEGER DEFAULT 0,
                     degraded_reason TEXT DEFAULT '',
                     routes_sha256 TEXT DEFAULT '',
-                    last_apply_time TEXT DEFAULT '—'
+                    last_apply_time TEXT DEFAULT '—',
+                    prev_final_count INTEGER DEFAULT 0,
+                    route_delta_pct REAL DEFAULT 0.0,
+                    anomaly INTEGER DEFAULT 0,
+                    anomaly_reason TEXT DEFAULT ''
                 )
                 """
             )
@@ -206,6 +210,10 @@ def init_db() -> None:
             _ensure_column(cursor, "stats", "degraded_reason", "TEXT DEFAULT ''")
             _ensure_column(cursor, "stats", "routes_sha256", "TEXT DEFAULT ''")
             _ensure_column(cursor, "stats", "last_apply_time", "TEXT DEFAULT '—'")
+            _ensure_column(cursor, "stats", "prev_final_count", "INTEGER DEFAULT 0")
+            _ensure_column(cursor, "stats", "route_delta_pct", "REAL DEFAULT 0.0")
+            _ensure_column(cursor, "stats", "anomaly", "INTEGER DEFAULT 0")
+            _ensure_column(cursor, "stats", "anomaly_reason", "TEXT DEFAULT ''")
 
             _ensure_column(cursor, "revisions", "config_json", "TEXT")
 
