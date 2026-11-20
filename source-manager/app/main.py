@@ -166,12 +166,29 @@ def _gather_operational_status() -> dict:
     try:
         st = conn.execute("SELECT * FROM stats WHERE id = 1").fetchone()
         stats = dict(st) if st else {}
+        err_rows = conn.execute(
+            "SELECT name, error FROM sources WHERE enabled = 1 AND status = 'error' ORDER BY id ASC"
+        ).fetchall()
     finally:
         conn.close()
 
     degraded = bool(stats.get("degraded"))
+    error_sources = [f"{r['name']}: {r['error'] or 'ошибка'}" for r in err_rows]
+    error_source_names = [r["name"] for r in err_rows]
+    anomaly = bool(stats.get("anomaly"))
+    anomaly_reason = stats.get("anomaly_reason") or ""
+    route_delta_pct = float(stats.get("route_delta_pct") or 0.0)
     final_count = int(stats.get("final_count") or live_routes or 0)
     ok = bird_up and (live_routes > 0 or final_count == 0)
+
+    issue_parts = []
+    if stats.get("degraded_reason"):
+        issue_parts.append(str(stats["degraded_reason"]))
+    if error_sources:
+        issue_parts.append("Ошибки источников: " + "; ".join(error_sources[:3]))
+    if anomaly_reason:
+        issue_parts.append(anomaly_reason)
+    issue_summary = "; ".join(issue_parts)
 
     duration_raw = str(stats.get("gen_duration") or "0").rstrip("сs")
     try:
@@ -196,6 +213,12 @@ def _gather_operational_status() -> dict:
         "peers_established": established,
         "degraded": degraded,
         "degraded_reason": stats.get("degraded_reason") or "",
+        "error_sources_count": len(error_sources),
+        "error_sources": error_source_names,
+        "route_delta_pct": route_delta_pct,
+        "anomaly": anomaly,
+        "anomaly_reason": anomaly_reason,
+        "issue_summary": issue_summary,
         "last_gen_time": stats.get("last_gen_time") or "—",
         "gen_duration": stats.get("gen_duration") or "—",
         "duration_seconds": duration_sec,
@@ -235,6 +258,12 @@ async def prometheus_metrics():
         "# HELP autobgp_degraded Whether route generation is degraded (using stale cache).",
         "# TYPE autobgp_degraded gauge",
         f"autobgp_degraded {1 if s['degraded'] else 0}",
+        "# HELP autobgp_error_sources Number of enabled sources currently in error state.",
+        "# TYPE autobgp_error_sources gauge",
+        f"autobgp_error_sources {s['error_sources_count']}",
+        "# HELP autobgp_route_anomaly Whether a sudden route count jump (>=40%) occurred.",
+        "# TYPE autobgp_route_anomaly gauge",
+        f"autobgp_route_anomaly {1 if s['anomaly'] else 0}",
         "# HELP autobgp_last_gen_duration_seconds Last route compilation duration in seconds.",
         "# TYPE autobgp_last_gen_duration_seconds gauge",
         f"autobgp_last_gen_duration_seconds {s['duration_seconds']}",
