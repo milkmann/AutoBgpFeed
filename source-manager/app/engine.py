@@ -102,6 +102,30 @@ COUNTRY_MAP = {
     "fr": ("FR", "France (Франция)", 250),
     "france": ("FR", "France (Франция)", 250),
     "франция": ("FR", "France (Франция)", 250),
+    "lt": ("LT", "Lithuania (Литва)", 440),
+    "lithuania": ("LT", "Lithuania (Литва)", 440),
+    "литва": ("LT", "Lithuania (Литва)", 440),
+    "lv": ("LV", "Latvia (Латвия)", 428),
+    "latvia": ("LV", "Latvia (Латвия)", 428),
+    "латвия": ("LV", "Latvia (Латвия)", 428),
+    "ee": ("EE", "Estonia (Эстония)", 233),
+    "estonia": ("EE", "Estonia (Эстония)", 233),
+    "эстония": ("EE", "Estonia (Эстония)", 233),
+    "fi": ("FI", "Finland (Финляндия)", 246),
+    "finland": ("FI", "Finland (Финляндия)", 246),
+    "финляндия": ("FI", "Finland (Финляндия)", 246),
+    "se": ("SE", "Sweden (Швеция)", 752),
+    "sweden": ("SE", "Sweden (Швеция)", 752),
+    "швеция": ("SE", "Sweden (Швеция)", 752),
+    "ch": ("CH", "Switzerland (Швейцария)", 756),
+    "switzerland": ("CH", "Switzerland (Швейцария)", 756),
+    "швейцария": ("CH", "Switzerland (Швейцария)", 756),
+    "ca": ("CA", "Canada (Канада)", 124),
+    "canada": ("CA", "Canada (Канада)", 124),
+    "канада": ("CA", "Canada (Канада)", 124),
+    "jp": ("JP", "Japan (Япония)", 392),
+    "japan": ("JP", "Japan (Япония)", 392),
+    "япония": ("JP", "Japan (Япония)", 392),
 }
 
 DELEGATED_REGISTRIES = ("ripencc", "arin", "apnic", "lacnic", "afrinic")
@@ -1035,6 +1059,7 @@ def build_candidate_snapshot(force_download: bool = False) -> dict:
         "generated_at_unix": int(time.time()),
         "gen_duration": f"{t_elapsed}с",
         "gen_duration_sec": t_elapsed,
+        "config_fingerprint": _config_fingerprint(),
         "routes_conf_text": routes_conf_text,
         "routes_sha256": routes_sha256,
         "prefixes": [e["prefix"] for e in entries],
@@ -1135,7 +1160,11 @@ def _persist_snapshot_to_db(snapshot: dict, now_str: str) -> None:
                     degraded = ?,
                     degraded_reason = ?,
                     routes_sha256 = ?,
-                    last_apply_time = ?
+                    last_apply_time = ?,
+                    prev_final_count = ?,
+                    route_delta_pct = ?,
+                    anomaly = ?,
+                    anomaly_reason = ?
                 WHERE id = 1
                 """,
                 (
@@ -1152,6 +1181,10 @@ def _persist_snapshot_to_db(snapshot: dict, now_str: str) -> None:
                     degraded_reason,
                     snapshot["routes_sha256"],
                     now_str,
+                    int(snapshot.get("prev_total", 0)),
+                    float(snapshot.get("route_delta_pct", 0.0)),
+                    1 if snapshot.get("anomaly") else 0,
+                    str(snapshot.get("anomaly_reason") or ""),
                 ),
             )
     finally:
@@ -1168,6 +1201,8 @@ def apply_snapshot(snapshot: dict, force_reload: bool = False) -> dict:
 
     confirmed = _read_json(confirmed_path)
     prev_sha = confirmed.get("routes_sha256") if confirmed else None
+    prev_total = len(confirmed.get("prefixes", [])) if confirmed else 0
+    prev_fp = confirmed.get("config_fingerprint") if confirmed else None
     current_disk_sha = None
     if os.path.exists(routes_conf_path):
         with open(routes_conf_path, "r", encoding="utf-8", errors="replace") as f:
@@ -1184,7 +1219,34 @@ def apply_snapshot(snapshot: dict, force_reload: bool = False) -> dict:
         and live_count == expected_count
         and not snapshot["degraded"]
     ):
+        if confirmed and confirmed.get("anomaly"):
+            confirmed["anomaly"] = False
+            confirmed["anomaly_reason"] = ""
+            confirmed["route_delta_pct"] = 0.0
+            _atomic_write_json(confirmed_path, confirmed)
+            conn = get_db()
+            try:
+                with conn:
+                    conn.execute("UPDATE stats SET anomaly = 0, anomaly_reason = '', route_delta_pct = 0.0 WHERE id = 1")
+            finally:
+                conn.close()
         return {"changed": False, "final_count": expected_count, "degraded": False}
+
+    # Detect unexpected route jumps/drops (>= +-40%) when source configuration did not change
+    curr_fp = snapshot.get("config_fingerprint")
+    delta_pct = round(((expected_count - prev_total) / prev_total) * 100.0, 1) if prev_total >= 100 else 0.0
+    is_anomaly = bool(prev_fp and curr_fp and prev_fp == curr_fp and prev_total >= 100 and abs(delta_pct) >= 40.0)
+    anomaly_reason = (
+        f"Резкое изменение маршрутов: {prev_total:,} → {expected_count:,} ({delta_pct:+.1f}%)"
+        if is_anomaly
+        else ""
+    )
+    snapshot["prev_total"] = prev_total
+    snapshot["route_delta_pct"] = delta_pct
+    snapshot["anomaly"] = is_anomaly
+    snapshot["anomaly_reason"] = anomaly_reason
+    if is_anomaly:
+        log_msg(anomaly_reason, "WARN")
 
     if expected_count == 0 and prev_sha and os.path.exists(last_good_conf_path):
         # Refuse silently wiping all routes when active sources exist unless explicitly empty
@@ -1239,6 +1301,7 @@ def apply_snapshot(snapshot: dict, force_reload: bool = False) -> dict:
     confirmed_payload = {
         "applied_at": now_str,
         "applied_at_unix": int(time.time()),
+        "config_fingerprint": curr_fp,
         "routes_sha256": snapshot["routes_sha256"],
         "prefixes": snapshot["prefixes"],
         "provenance_sources": snapshot["provenance_sources"],
@@ -1246,6 +1309,10 @@ def apply_snapshot(snapshot: dict, force_reload: bool = False) -> dict:
         "stats": snapshot["stats"],
         "degraded": snapshot["degraded"],
         "degraded_reasons": snapshot["degraded_reasons"],
+        "prev_total": prev_total,
+        "route_delta_pct": delta_pct,
+        "anomaly": is_anomaly,
+        "anomaly_reason": anomaly_reason,
     }
     _atomic_write_json(confirmed_path, confirmed_payload)
     _persist_snapshot_to_db(snapshot, now_str)
