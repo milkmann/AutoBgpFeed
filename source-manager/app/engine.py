@@ -1,5 +1,6 @@
 """Core route collection, CIDR math, Smart-DNS, transactional BIRD apply, previews, provenance, and backups."""
 
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import hashlib
 import ipaddress
@@ -17,6 +18,9 @@ import httpx
 
 from .bird_client import bird_configure, bird_route_count
 from .db import DEFAULT_SETTINGS, get_db, get_settings, set_settings
+
+ALLOWED_SOURCE_TYPES = {"COUNTRY", "DOMAIN", "ASN", "PREFIX", "EXTERNAL_URL", "DOMAIN_LIST_URL", "GOOGLE"}
+MAX_DOMAINS_PER_URL_LIST = 500
 
 _REBUILD_LOCK = threading.Lock()
 _CLOUDFLARE_LOCK = threading.Lock()
@@ -652,8 +656,75 @@ def fetch_external_url(url: str, min_prefix_length: int | None = None, allow_bro
     return [str(n) for n in ipaddress.collapse_addresses(prefixes)]
 
 
+def fetch_domain_list_url(
+    url: str,
+    cdn_mode: str = "auto",
+    resolvers: list[str] | None = None,
+    cache_ttl: int | None = None,
+    min_prefix_length: int | None = None,
+    allow_broad: bool = False,
+) -> list[str]:
+    """Fetch an external HTTP/HTTPS list of domain names (and optional literal CIDRs) and resolve to IPv4 prefixes."""
+    min_len = get_min_prefix_length() if min_prefix_length is None else min_prefix_length
+    content = _safe_http_get_text(url, timeout=12.0, validate_ssrf=True)
+
+    direct_nets: list[ipaddress.IPv4Network] = []
+    domains: list[str] = []
+    seen_domains: set[str] = set()
+    for raw_line in content.splitlines():
+        line = raw_line.split("#", 1)[0].split(";", 1)[0].strip()
+        if not line:
+            continue
+        token = line.split()[0].strip()
+        if not token:
+            continue
+        # Handle literal IPv4 / CIDR entries alongside domains
+        try:
+            net_probe = ipaddress.IPv4Network(token if "/" in token else f"{token}/32", strict=False)
+            valid = is_valid_ipv4_net(str(net_probe), min_prefix_length=min_len, allow_broad=allow_broad)
+            if valid:
+                direct_nets.append(valid)
+            continue
+        except ValueError:
+            pass
+
+        d_clean = token.lower()
+        if d_clean.startswith("http://") or d_clean.startswith("https://"):
+            d_clean = urllib.parse.urlparse(d_clean).hostname or ""
+        d_clean = d_clean.rstrip(".")
+        if not d_clean or "." not in d_clean or len(d_clean) > 253:
+            continue
+        if d_clean not in seen_domains:
+            seen_domains.add(d_clean)
+            domains.append(d_clean)
+            if len(domains) >= MAX_DOMAINS_PER_URL_LIST:
+                break
+
+    if domains:
+        def _resolve_one(dom: str) -> list[str]:
+            return resolve_domain(dom, cdn_mode=cdn_mode, resolvers=resolvers, cache_ttl=cache_ttl)
+
+        with ThreadPoolExecutor(max_workers=min(8, len(domains))) as pool:
+            for resolved_cidrs in pool.map(_resolve_one, domains):
+                for cidr in resolved_cidrs:
+                    net = is_valid_ipv4_net(cidr, min_prefix_length=min_len, allow_broad=allow_broad)
+                    if net:
+                        direct_nets.append(net)
+
+    return [str(n) for n in ipaddress.collapse_addresses(direct_nets)]
+
+
 def _source_cache_path(source_id: int) -> str:
     return os.path.join(get_data_dir(), "cache", f"source_{source_id}.json")
+
+
+def invalidate_source_cache(source_id: int) -> None:
+    path = _source_cache_path(source_id)
+    if os.path.exists(path):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def save_source_cache(source_id: int, prefixes: list[str]) -> str:
@@ -730,6 +801,17 @@ def _collect_single_source(
             prefixes = fetch_external_url(s_val, min_prefix_length=min_prefix_length, allow_broad=allow_broad)
             if not prefixes:
                 raise RuntimeError(f"URL returned 0 valid prefixes: {s_val}")
+        elif s_type == "DOMAIN_LIST_URL":
+            prefixes = fetch_domain_list_url(
+                s_val,
+                cdn_mode=cdn_mode,
+                resolvers=resolvers,
+                cache_ttl=cache_ttl,
+                min_prefix_length=min_prefix_length,
+                allow_broad=allow_broad,
+            )
+            if not prefixes:
+                raise RuntimeError(f"Domain list URL resolved 0 valid prefixes: {s_val}")
         elif s_type == "GOOGLE":
             prefixes = fetch_google_non_cloud(min_prefix_length=min_prefix_length, allow_broad=allow_broad)
             if not prefixes:
@@ -887,6 +969,8 @@ def build_candidate_snapshot(force_download: bool = False) -> dict:
             category = "Custom CIDR"
         elif sr["type"] == "EXTERNAL_URL":
             category = "URL List"
+        elif sr["type"] == "DOMAIN_LIST_URL":
+            category = f"Domain List ({sr['name']})"
         elif sr["type"] == "GOOGLE":
             category = "Google (non-GCP)"
         else:
@@ -1613,7 +1697,7 @@ def _apply_config_payload(data: dict, action_label: str) -> None:
     if not isinstance(data, dict) or not isinstance(data.get("sources"), list) or not isinstance(data.get("exclusions"), list):
         raise ValueError("Некорректный формат конфигурации (ожидаются sources и exclusions)")
 
-    allowed_types = {"COUNTRY", "DOMAIN", "ASN", "PREFIX", "EXTERNAL_URL", "GOOGLE"}
+    allowed_types = ALLOWED_SOURCE_TYPES
     for s in data["sources"]:
         if not isinstance(s, dict) or not s.get("name") or str(s.get("type", "")).upper() not in allowed_types or not s.get("value"):
             raise ValueError(f"Некорректный источник в бэкапе: {s}")
