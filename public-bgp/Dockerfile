@@ -1,4 +1,3 @@
-FROM frrouting/frr:latest
-
-COPY daemons /etc/frr/daemons
-COPY frr.conf /etc/frr/frr.conf
+# DEPRECATED in AutoBgpFeed v2
+# FRRouting (`public-bgp`) was replaced by pure BIRD 2 dynamic BGP inside `bgp-core`.
+FROM scratch

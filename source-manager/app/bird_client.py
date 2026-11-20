@@ -1,5 +1,6 @@
 """Pure-Python BIRD 2 Unix control socket client (replaces docker.sock / FRR vtysh)."""
 
+import datetime
 import os
 import re
 import socket
@@ -8,6 +9,7 @@ import threading
 _BIRD_LOCK = threading.Lock()
 _TERM_RE = re.compile(r"^(0(?!00[12])\d{3}|[89]\d{3}) ")
 _CODE_PREFIX_RE = re.compile(r"^\d{4}[- ]")
+_PROTOCOL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 def get_bird_socket() -> str:
@@ -170,3 +172,76 @@ def bird_peers() -> list[dict]:
         return parse_protocols_all(lines)
     except Exception:
         return []
+
+
+def parse_bird_server_time(lines: list[str]) -> datetime.datetime | None:
+    """Extract BIRD's current server timestamp from `show status` output."""
+    text = "\n".join(lines)
+    m = re.search(r"Current server time is\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})(?:\.\d+)?", text)
+    if not m:
+        return None
+    try:
+        return datetime.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def _peer_age_seconds(since_str: str, now_dt: datetime.datetime) -> float | None:
+    s = (since_str or "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        try:
+            d = datetime.datetime.strptime(s, "%Y-%m-%d").date()
+            return float(max(86400, (now_dt.date() - d).days * 86400))
+        except ValueError:
+            return None
+    m = re.fullmatch(r"(\d{2}:\d{2}:\d{2})(?:\.\d+)?", s)
+    if m:
+        try:
+            t = datetime.datetime.strptime(m.group(1), "%H:%M:%S").time()
+            cand = datetime.datetime.combine(now_dt.date(), t)
+            if cand > now_dt + datetime.timedelta(minutes=2):
+                cand -= datetime.timedelta(days=1)
+            return max(0.0, (now_dt - cand).total_seconds())
+        except ValueError:
+            return None
+    return None
+
+
+def bird_cleanup_stale_peers(stale_seconds: int = 300) -> list[dict]:
+    """Disable and prune stale non-Established dynamic `client_*` BGP instances in BIRD 2."""
+    try:
+        ok_st, _, st_lines = bird_cmd("show status", timeout=5.0)
+        if not ok_st:
+            return []
+        now_dt = parse_bird_server_time(st_lines) or datetime.datetime.now()
+
+        ok_p, _, p_lines = bird_cmd("show protocols all", timeout=5.0)
+        if not ok_p:
+            return []
+        peers = parse_protocols_all(p_lines)
+    except Exception:
+        return []
+
+    cleaned: list[dict] = []
+    for peer in peers:
+        name = str(peer.get("name") or "")
+        if not name.startswith("client_") or not _PROTOCOL_NAME_RE.fullmatch(name):
+            continue
+        if str(peer.get("state") or "").lower() == "established":
+            continue
+        age = _peer_age_seconds(str(peer.get("since") or ""), now_dt)
+        if age is None or age < stale_seconds:
+            continue
+        try:
+            ok_dis, _, _ = bird_cmd(f"disable {name}", timeout=5.0)
+            if ok_dis:
+                cleaned.append({"name": name, "ip": peer.get("ip"), "state": peer.get("state"), "since": peer.get("since")})
+        except Exception:
+            continue
+
+    if cleaned:
+        try:
+            bird_configure()
+        except Exception:
+            pass
+    return cleaned
