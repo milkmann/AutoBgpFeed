@@ -278,7 +278,7 @@ def test_api_auth_csrf_rbac_ratelimit_and_backup(isolated_env):
         assert client.post("/api/rebuild", follow_redirects=False).status_code == 403
 
         # POST Form with CSRF -> 303
-        with patch.object(engine, "rebuild_all", return_value=1):
+        with patch.object(main, "rebuild_all", return_value=1):
             r_add = client.post(
                 "/api/sources/add",
                 data={
@@ -300,7 +300,7 @@ def test_api_auth_csrf_rbac_ratelimit_and_backup(isolated_env):
         assert "users" not in bk_json
         assert any(s["value"] == "8.8.4.0/24" for s in bk_json["sources"])
 
-        with patch.object(engine, "rebuild_all", return_value=1):
+        with patch.object(main, "rebuild_all", return_value=1):
             imp = client.post(
                 "/api/backup/import",
                 headers={"X-CSRF-Token": csrf},
@@ -308,3 +308,121 @@ def test_api_auth_csrf_rbac_ratelimit_and_backup(isolated_env):
             )
             assert imp.status_code == 200
             assert imp.json()["ok"] is True
+
+        # Bulk add sources & exclusions + inline edit source
+        with patch.object(main, "rebuild_all", return_value=1):
+            r_bulk = client.post(
+                "/api/sources/bulk",
+                data={
+                    "source_type": "DOMAIN",
+                    "entries": "youtube.com\nOpenAI | openai.com\n# comment\n",
+                    "gateway": "wireguard2warp",
+                    "community": "65000:102",
+                    "cdn_mode": "auto",
+                    "csrf_token": csrf,
+                },
+                follow_redirects=False,
+            )
+            assert r_bulk.status_code == 303
+
+            r_ebulk = client.post(
+                "/api/exclusions/bulk",
+                data={"exc_type": "PREFIX", "entries": "MyISP | 195.0.0.10/32\n8.8.8.8\n", "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            assert r_ebulk.status_code == 303
+
+        conn = db.get_db()
+        added_row = conn.execute("SELECT id, name, gateway, community FROM sources WHERE value = 'openai.com'").fetchone()
+        excl_cnt = conn.execute("SELECT COUNT(*) FROM exclusions").fetchone()[0]
+        conn.close()
+        assert added_row is not None
+        assert added_row["name"] == "OpenAI"
+        assert added_row["gateway"] == "wireguard2warp"
+        assert excl_cnt == 2
+
+        with patch.object(main, "rebuild_all", return_value=1):
+            r_upd = client.post(
+                f"/api/sources/{added_row['id']}/update",
+                data={
+                    "name": "OpenAI Direct",
+                    "source_type": "DOMAIN",
+                    "value": "chatgpt.com",
+                    "gateway": "wireguard5warpzero",
+                    "community": "65000:103",
+                    "cdn_mode": "exact",
+                    "csrf_token": csrf,
+                },
+                follow_redirects=False,
+            )
+            assert r_upd.status_code == 303
+
+        conn = db.get_db()
+        upd_row = conn.execute("SELECT name, value, gateway, community, cdn_mode FROM sources WHERE id = ?", (added_row["id"],)).fetchone()
+        conn.close()
+        assert upd_row["name"] == "OpenAI Direct"
+        assert upd_row["value"] == "chatgpt.com"
+        assert upd_row["gateway"] == "wireguard5warpzero"
+        assert upd_row["community"] == "65000:103"
+        assert upd_row["cdn_mode"] == "exact"
+
+
+def test_bird_cleanup_stale_peers():
+    status_lines = [
+        "BIRD 2.15.1",
+        "Current server time is 2026-11-20 12:23:28.723",
+        "Daemon is up and running",
+    ]
+    proto_lines = [
+        "Name       Proto      Table      State  Since         Info",
+        "client_1   BGP        ---        up     2026-11-19    Established",
+        "  BGP state:          Established",
+        "    Neighbor address: 198.51.100.10",
+        "",
+        "client_2   BGP        ---        start  08:31:18.427  Passive",
+        "  BGP state:          Passive",
+        "    Neighbor address: 198.51.100.99",
+        "",
+        "client_3   BGP        ---        start  12:21:00.000  Passive",
+        "  BGP state:          Passive",
+        "    Neighbor address: 198.51.100.88",
+        "",
+    ]
+    calls = []
+
+    def fake_bird_cmd(cmd, timeout=5.0):
+        calls.append(cmd)
+        if cmd == "show status":
+            return True, "0000", status_lines
+        if cmd == "show protocols all":
+            return True, "0000", proto_lines
+        return True, "0000", ["disabled"]
+
+    with patch.object(bird_client, "bird_cmd", side_effect=fake_bird_cmd), \
+         patch.object(bird_client, "bird_configure", return_value="Reconfigured") as mock_cfg:
+        cleaned = bird_client.bird_cleanup_stale_peers(stale_seconds=300)
+
+    assert [c["name"] for c in cleaned] == ["client_2"]
+    assert "disable client_2" in calls
+    assert "disable client_1" not in calls
+    assert "disable client_3" not in calls
+    assert mock_cfg.call_count == 1
+
+
+def test_domain_list_url(isolated_env):
+    txt = "# sample domains\nexample.com\n1.1.1.0/24\n# comment\nbad-internal.test ; ignore\n"
+    with patch.object(engine, "_safe_http_get_text", return_value=txt), \
+         patch.object(engine, "resolve_domain", side_effect=lambda d, **kw: ["93.184.216.34/32"] if d == "example.com" else []):
+        res = engine.fetch_domain_list_url("https://example.org/domains.txt")
+    assert res == ["1.1.1.0/24", "93.184.216.34/32"]
+
+
+def test_polling_log_filter():
+    import logging
+    flt = main.PollingAccessFilter()
+    r_ok_health = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d', ("127.0.0.1:123", "GET", "/healthz", "1.1", 200), None)
+    r_err_health = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d', ("127.0.0.1:123", "GET", "/healthz", "1.1", 503), None)
+    r_login = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d', ("198.51.100.1", "POST", "/login", "1.1", 200), None)
+    assert flt.filter(r_ok_health) is False
+    assert flt.filter(r_err_health) is True
+    assert flt.filter(r_login) is True
