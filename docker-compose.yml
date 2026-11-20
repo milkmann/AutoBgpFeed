@@ -3,52 +3,78 @@ services:
     build: ./bgp-core
     container_name: bgp-core
     restart: unless-stopped
-    volumes:
-      - ./bgp-core/bird.conf:/etc/bird.conf:ro
-      - ./bgp-core/generated:/generated:rw
-      - ./data:/data:rw
     networks:
-      bgp-internal:
+      routefeed-net:
         ipv4_address: 172.30.0.2
-
-  public-bgp:
-    build: ./public-bgp
-    container_name: public-bgp
-    restart: unless-stopped
-    privileged: true
     ports:
       - "${BGP_PORT:-179}:179"
     volumes:
-      - ./public-bgp/frr.conf:/etc/frr/frr.conf:ro
-      - ./public-bgp/daemons:/etc/frr/daemons:ro
-    networks:
-      bgp-internal:
-        ipv4_address: 172.30.0.3
+      - ./bgp-core/generated:/etc/bird/generated
+      - bird-run:/run/bird
+    environment:
+      - SERVER_IP=${SERVER_IP:-172.30.0.2}
+      - SERVER_ASN=${SERVER_ASN:-65000}
+    cap_add:
+      - NET_ADMIN
+      - NET_BIND_SERVICE
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "birdc", "-s", "/run/bird/bird.ctl", "show", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   source-manager:
     build: ./source-manager
     container_name: source-manager
     restart: unless-stopped
+    networks:
+      routefeed-net:
+        ipv4_address: 172.30.0.4
     ports:
-      - "${WEB_PORT:-8080}:8080"
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:8080"
+    volumes:
+      - ./data:/data
+      - ./bgp-core/generated:/generated
+      - bird-run:/run/bird
     environment:
-      - ADMIN_USER=${ADMIN_USER:-admin}
-      - ADMIN_PASS=${ADMIN_PASS:-changeme}
-      - SERVER_IP=${SERVER_IP:-127.0.0.1}
-      - SERVER_ASN=${SERVER_ASN:-65000}
       - DATA_DIR=/data
       - GENERATED_DIR=/generated
-      - BGP_CORE_CONTAINER=bgp-core
-    volumes:
-      - ./data:/data:rw
-      - ./bgp-core/generated:/generated:rw
-      - /var/run/docker.sock:/var/run/docker.sock:rw
-    networks:
-      bgp-internal:
-        ipv4_address: 172.30.0.4
+      - BIRD_SOCKET=/run/bird/bird.ctl
+      - SERVER_IP=${SERVER_IP:-127.0.0.1}
+      - SERVER_ASN=${SERVER_ASN:-65000}
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASS=${ADMIN_PASS:-}
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - MIN_PREFIX_LENGTH=${MIN_PREFIX_LENGTH:-8}
+      - CACHE_MAX_AGE=${CACHE_MAX_AGE:-604800}
+      - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-1}
+    depends_on:
+      bgp-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  bird-run:
 
 networks:
-  bgp-internal:
+  routefeed-net:
     driver: bridge
     ipam:
       config:

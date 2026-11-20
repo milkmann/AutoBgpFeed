@@ -1,1 +1,1 @@
-# Auto BGP Feed Package
+"""AutoBgpFeed v2 source-manager package."""

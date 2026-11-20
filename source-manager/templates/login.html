@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoBgpFeed v2 — Вход</title>
+  <link href="/static/vendor/bootstrap.min.css" rel="stylesheet">
+  <link href="/static/vendor/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    body {
+      background: radial-gradient(circle at top right, #0f2342 0%, #070d18 65%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .login-card {
+      width: 100%;
+      max-width: 410px;
+      background-color: #0f1a2e;
+      border: 1px solid #1e2e4a;
+      border-radius: 14px;
+      padding: 32px;
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45);
+    }
+    .form-control {
+      background-color: #091221 !important;
+      border: 1px solid #203554 !important;
+      color: #ffffff !important;
+    }
+    .form-control:focus {
+      border-color: #00d2ff !important;
+      box-shadow: 0 0 0 0.2rem rgba(0, 210, 255, 0.2) !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="text-center mb-4">
+      <div class="fs-1 text-info mb-1"><i class="bi bi-shield-shaded"></i></div>
+      <h4 class="fw-bold text-white mb-0">AutoBgpFeed <span class="badge bg-info bg-opacity-25 text-info fs-6">v2</span></h4>
+      <div class="text-secondary small mt-1">BGP Route Gateway & Feed Manager</div>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger py-2 small" role="alert">
+      <i class="bi bi-exclamation-triangle-fill me-1"></i> {{ error }}
+    </div>
+    {% endif %}
+
+    <form action="/login" method="post">
+      <div class="mb-3">
+        <label class="form-label text-secondary small fw-semibold" for="username">Логин</label>
+        <input type="text" id="username" name="username" class="form-control" value="{{ username }}" autocomplete="username" required autofocus>
+      </div>
+      <div class="mb-4">
+        <label class="form-label text-secondary small fw-semibold" for="password">Пароль</label>
+        <input type="password" id="password" name="password" class="form-control" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-info w-100 fw-semibold py-2 text-dark">
+        <i class="bi bi-box-arrow-in-right me-1"></i> Войти в панель
+      </button>
+    </form>
+  </div>
+</body>
+</html>

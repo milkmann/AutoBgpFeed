@@ -1,0 +1,32 @@
+log stderr all;
+
+router id __ROUTER_ID__;
+
+protocol device {
+    scan time 10;
+}
+
+protocol static feed_routes {
+    ipv4;
+    include "/etc/bird/generated/routes.conf";
+}
+
+protocol bgp public_clients {
+    local as __SERVER_ASN__;
+    neighbor range 0.0.0.0/0 external;
+    dynamic name "client_";
+    multihop 64;
+    passive on;
+    hold time 180;
+    keepalive time 60;
+    graceful restart aware;
+
+    ipv4 {
+        import none;
+        next hop self;
+        export filter {
+            if (__SERVER_ASN__, 1000) ~ bgp_community then accept;
+            reject;
+        };
+    };
+}
