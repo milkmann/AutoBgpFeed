@@ -69,7 +69,7 @@ COUNTRY_MAP = {
     "georgia": ("GE", "Georgia (Грузия)", 268),
     "грузия": ("GE", "Georgia (Грузия)", 268),
     "am": ("AM", "Armenia (Армения)", 51),
-    "armenia": ("AM", "Armenia (Armenia)" if False else "Armenia (Армения)", 51),
+    "armenia": ("AM", "Armenia (Армения)", 51),
     "армения": ("AM", "Armenia (Армения)", 51),
     "az": ("AZ", "Azerbaijan (Азербайджан)", 31),
     "azerbaijan": ("AZ", "Azerbaijan (Азербайджан)", 31),
