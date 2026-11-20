@@ -4,6 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import datetime
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -28,9 +29,10 @@ from .auth import (
     require_user,
     verify_csrf,
 )
-from .bird_client import bird_peers, bird_route_count, bird_status
+from .bird_client import bird_cleanup_stale_peers, bird_peers, bird_route_count, bird_status
 from .db import DEFAULT_VPN_PROFILES, get_db, get_settings, hash_password, init_db, set_settings, verify_password
 from .engine import (
+    ALLOWED_SOURCE_TYPES,
     apply_preview,
     check_ip_in_feed,
     create_preview,
@@ -42,6 +44,7 @@ from .engine import (
     get_server_ip,
     get_source_prefixes,
     import_config_backup,
+    invalidate_source_cache,
     list_revisions,
     log_msg,
     rebuild_all,
@@ -55,14 +58,54 @@ from .engine import (
 )
 
 APP_START_TIME = time.time()
+POLLING_PATHS = {"/healthz", "/status.json", "/metrics", "/api/telemetry", "/api/logs"}
+
+
+class PollingAccessFilter(logging.Filter):
+    """Suppress noisy 200 OK polling/healthcheck lines from uvicorn access logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            args = record.args
+            if isinstance(args, tuple) and len(args) >= 5:
+                path_raw = str(args[2]).split("?", 1)[0]
+                status_code = int(args[4])
+                if status_code == 200 and path_raw in POLLING_PATHS:
+                    return False
+        except Exception:
+            pass
+        return True
+
+
+def _install_access_log_filter() -> None:
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, PollingAccessFilter) for f in access_logger.filters):
+        access_logger.addFilter(PollingAccessFilter())
+
+
+async def _cleanup_zombie_peers_once() -> None:
+    cleaned = await asyncio.to_thread(bird_cleanup_stale_peers, 300)
+    if cleaned:
+        desc = ", ".join(f"{p['name']} ({p['ip']})" for p in cleaned)
+        await asyncio.to_thread(log_msg, f"Очищено неактивных BGP-пиров ({len(cleaned)}): {desc}", "INFO")
 
 
 async def _initial_build_task() -> None:
     await asyncio.sleep(1)
     try:
+        await _cleanup_zombie_peers_once()
         await asyncio.to_thread(rebuild_all, False, False)
     except Exception as exc:
         log_msg(f"Ошибка начальной сборки: {exc}", "ERROR")
+
+
+async def _bird_maintenance_task() -> None:
+    while True:
+        await asyncio.sleep(300)
+        try:
+            await _cleanup_zombie_peers_once()
+        except Exception as exc:
+            log_msg(f"Ошибка очистки пиров BIRD: {exc}", "WARN")
 
 
 async def _scheduler_task() -> None:
@@ -84,14 +127,17 @@ async def _scheduler_task() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _install_access_log_filter()
     init_db()
     init_task = asyncio.create_task(_initial_build_task())
     sched_task = asyncio.create_task(_scheduler_task())
+    maint_task = asyncio.create_task(_bird_maintenance_task())
     try:
         yield
     finally:
         init_task.cancel()
         sched_task.cancel()
+        maint_task.cancel()
 
 
 app = FastAPI(title="AutoBgpFeed v2", lifespan=lifespan)
@@ -397,21 +443,16 @@ async def tool_lookup_asn(asn: str = Form(...), user: dict = Depends(verify_csrf
 # ----------------- Sources & Exclusions (Admin + CSRF) -----------------
 
 
-@app.post("/api/sources/add")
-async def add_source(
-    name: str = Form(...),
-    source_type: str = Form(...),
-    value: str = Form(...),
-    community: str = Form(""),
-    gateway: str = Form("wireguard1"),
-    cdn_mode: str = Form("auto"),
-    user: dict = Depends(verify_csrf),
-):
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin privileges required")
-
+def _normalize_source_fields(
+    name: str,
+    source_type: str,
+    value: str,
+    community: str = "",
+    gateway: str = "wireguard1",
+    cdn_mode: str = "auto",
+) -> tuple[str, str, str, str, str, str]:
     s_type = source_type.strip().upper()
-    if s_type not in {"COUNTRY", "DOMAIN", "ASN", "PREFIX", "EXTERNAL_URL", "GOOGLE"}:
+    if s_type not in ALLOWED_SOURCE_TYPES:
         raise HTTPException(status_code=400, detail="Неподдерживаемый тип источника")
 
     val_clean = value.strip()
@@ -431,8 +472,11 @@ async def add_source(
         if not name_clean:
             name_clean = "Google (без Google Cloud)"
         default_comm = f"{asn}:1000"
-    elif s_type == "EXTERNAL_URL":
-        validate_external_url(val_clean)
+    elif s_type in ("EXTERNAL_URL", "DOMAIN_LIST_URL"):
+        try:
+            validate_external_url(val_clean)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         default_comm = f"{asn}:500"
     elif s_type == "DOMAIN":
         default_comm = f"{asn}:200"
@@ -441,9 +485,30 @@ async def add_source(
     else:
         default_comm = f"{asn}:600"
 
+    if not name_clean:
+        name_clean = val_clean
     comm_clean = community.strip()
     if not re.fullmatch(r"\d+:\d+", comm_clean):
         comm_clean = default_comm
+    return name_clean, s_type, val_clean, comm_clean, gw_clean, cdn_clean
+
+
+@app.post("/api/sources/add")
+async def add_source(
+    name: str = Form(...),
+    source_type: str = Form(...),
+    value: str = Form(...),
+    community: str = Form(""),
+    gateway: str = Form("wireguard1"),
+    cdn_mode: str = Form("auto"),
+    user: dict = Depends(verify_csrf),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    name_clean, s_type, val_clean, comm_clean, gw_clean, cdn_clean = _normalize_source_fields(
+        name, source_type, value, community, gateway, cdn_mode
+    )
 
     def _insert():
         conn = get_db()
@@ -462,6 +527,108 @@ async def add_source(
 
     await asyncio.to_thread(_insert)
     log_msg(f"Пользователь {user['username']} добавил источник: {name_clean} ({s_type}: {val_clean} -> {gw_clean})", "INFO")
+    asyncio.create_task(asyncio.to_thread(rebuild_all, False, False))
+    return RedirectResponse(url="/#sources", status_code=303)
+
+
+@app.post("/api/sources/bulk")
+async def bulk_add_sources(
+    source_type: str = Form("DOMAIN"),
+    entries: str = Form(...),
+    community: str = Form(""),
+    gateway: str = Form("wireguard1"),
+    cdn_mode: str = Form("auto"),
+    user: dict = Depends(verify_csrf),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    s_type = source_type.strip().upper()
+    if s_type not in {"DOMAIN", "PREFIX", "ASN", "COUNTRY", "EXTERNAL_URL", "DOMAIN_LIST_URL"}:
+        raise HTTPException(status_code=400, detail="Массовое добавление не поддерживает этот тип")
+
+    parsed_rows: list[tuple[str, str, str, str, str, str]] = []
+    for raw_line in entries.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if "|" in line:
+            part_name, part_val = [p.strip() for p in line.split("|", 1)]
+        else:
+            part_name, part_val = "", line
+        if not part_val:
+            continue
+        parsed_rows.append(_normalize_source_fields(part_name or part_val, s_type, part_val, community, gateway, cdn_mode))
+
+    if not parsed_rows:
+        raise HTTPException(status_code=400, detail="Список пуст")
+    if len(parsed_rows) > 200:
+        raise HTTPException(status_code=400, detail="За один раз можно добавить до 200 записей (для больших списков используйте DOMAIN_LIST_URL)")
+
+    def _insert_bulk():
+        conn = get_db()
+        try:
+            with conn:
+                save_revision("bulk_add_sources", f"{len(parsed_rows)} x {s_type}", conn=conn)
+                conn.executemany(
+                    """
+                    INSERT INTO sources (name, type, value, enabled, community, status, gateway, cdn_mode)
+                    VALUES (?, ?, ?, 1, ?, 'pending', ?, ?)
+                    """,
+                    parsed_rows,
+                )
+        finally:
+            conn.close()
+
+    await asyncio.to_thread(_insert_bulk)
+    log_msg(f"Пользователь {user['username']} массово добавил {len(parsed_rows)} источников ({s_type})", "INFO")
+    asyncio.create_task(asyncio.to_thread(rebuild_all, False, False))
+    return RedirectResponse(url="/#sources", status_code=303)
+
+
+@app.post("/api/sources/{source_id}/update")
+async def update_source(
+    source_id: int,
+    name: str = Form(...),
+    source_type: str = Form(...),
+    value: str = Form(...),
+    community: str = Form(""),
+    gateway: str = Form("wireguard1"),
+    cdn_mode: str = Form("auto"),
+    user: dict = Depends(verify_csrf),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    name_clean, s_type, val_clean, comm_clean, gw_clean, cdn_clean = _normalize_source_fields(
+        name, source_type, value, community, gateway, cdn_mode
+    )
+
+    def _update():
+        conn = get_db()
+        try:
+            existing = conn.execute("SELECT id FROM sources WHERE id = ?", (source_id,)).fetchone()
+            if not existing:
+                return False
+            with conn:
+                save_revision("edit_source", f"ID {source_id}: {name_clean} ({s_type}: {val_clean})", conn=conn)
+                conn.execute(
+                    """
+                    UPDATE sources
+                    SET name = ?, type = ?, value = ?, community = ?, gateway = ?, cdn_mode = ?, status = 'pending', error = NULL
+                    WHERE id = ?
+                    """,
+                    (name_clean, s_type, val_clean, comm_clean, gw_clean, cdn_clean, source_id),
+                )
+            invalidate_source_cache(source_id)
+            return True
+        finally:
+            conn.close()
+
+    ok = await asyncio.to_thread(_update)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Источник не найден")
+    log_msg(f"Пользователь {user['username']} обновил источник #{source_id}: {name_clean} -> {gw_clean} ({comm_clean})", "INFO")
     asyncio.create_task(asyncio.to_thread(rebuild_all, False, False))
     return RedirectResponse(url="/#sources", status_code=303)
 
@@ -532,6 +699,54 @@ async def add_exclusion(
 
     await asyncio.to_thread(_insert)
     log_msg(f"Пользователь {user['username']} добавил исключение: {name} ({t_clean}: {value})", "INFO")
+    asyncio.create_task(asyncio.to_thread(rebuild_all, False, False))
+    return RedirectResponse(url="/#exclusions", status_code=303)
+
+
+@app.post("/api/exclusions/bulk")
+async def bulk_add_exclusions(
+    exc_type: str = Form("PREFIX"),
+    entries: str = Form(...),
+    user: dict = Depends(verify_csrf),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    t_clean = exc_type.strip().upper()
+    if t_clean not in ("PREFIX", "DOMAIN"):
+        t_clean = "PREFIX"
+
+    parsed: list[tuple[str, str, str]] = []
+    for raw_line in entries.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if "|" in line:
+            part_name, part_val = [p.strip() for p in line.split("|", 1)]
+        else:
+            part_name, part_val = line, line
+        if part_val:
+            parsed.append((part_name or part_val, t_clean, part_val))
+
+    if not parsed:
+        raise HTTPException(status_code=400, detail="Список исключений пуст")
+    if len(parsed) > 500:
+        raise HTTPException(status_code=400, detail="Максимум 500 исключений за один раз")
+
+    def _insert_bulk():
+        conn = get_db()
+        try:
+            with conn:
+                save_revision("bulk_add_exclusions", f"{len(parsed)} x {t_clean}", conn=conn)
+                conn.executemany(
+                    "INSERT INTO exclusions (name, type, value, enabled) VALUES (?, ?, ?, 1)",
+                    parsed,
+                )
+        finally:
+            conn.close()
+
+    await asyncio.to_thread(_insert_bulk)
+    log_msg(f"Пользователь {user['username']} массово добавил {len(parsed)} исключений ({t_clean})", "INFO")
     asyncio.create_task(asyncio.to_thread(rebuild_all, False, False))
     return RedirectResponse(url="/#exclusions", status_code=303)
 
