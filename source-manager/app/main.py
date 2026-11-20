@@ -934,6 +934,69 @@ async def api_update_settings(
     return RedirectResponse(url="/#settings", status_code=303)
 
 
+@app.post("/api/vpn-profiles/add")
+async def api_add_vpn_profile(
+    label: str = Form(...),
+    name: str = Form(...),
+    community: str = Form(...),
+    user: dict = Depends(verify_csrf),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    gw_clean = re.sub(r"[^A-Za-z0-9_.-]", "", name.strip())
+    comm_clean = community.strip()
+    label_clean = label.strip() or gw_clean
+    if not gw_clean:
+        raise HTTPException(status_code=400, detail="Укажите корректное имя интерфейса (латиница, цифры, _ . -)")
+    if not re.fullmatch(r"\d+:\d+", comm_clean):
+        raise HTTPException(status_code=400, detail="Community должно быть в формате ASN:ID (например 65000:104)")
+
+    def _save():
+        settings = get_settings()
+        try:
+            profiles = json.loads(settings.get("vpn_profiles") or "[]")
+            if not isinstance(profiles, list):
+                profiles = list(DEFAULT_VPN_PROFILES)
+        except Exception:
+            profiles = list(DEFAULT_VPN_PROFILES)
+        profiles = [p for p in profiles if p.get("community") != comm_clean]
+        profiles.append({"name": gw_clean, "community": comm_clean, "label": label_clean})
+        set_settings({"vpn_profiles": json.dumps(profiles, ensure_ascii=False)})
+
+    await asyncio.to_thread(_save)
+    log_msg(f"Пользователь {user['username']} добавил VPN-профиль: {label_clean} ({gw_clean} / {comm_clean})", "INFO")
+    return RedirectResponse(url="/#settings", status_code=303)
+
+
+@app.post("/api/vpn-profiles/delete")
+async def api_delete_vpn_profile(
+    community: str = Form(...),
+    user: dict = Depends(verify_csrf),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    comm_clean = community.strip()
+    primary_comm = f"{get_server_asn()}:1000"
+    if comm_clean == primary_comm:
+        return RedirectResponse(url="/#settings", status_code=303)
+
+    def _remove():
+        settings = get_settings()
+        try:
+            profiles = json.loads(settings.get("vpn_profiles") or "[]")
+        except Exception:
+            return
+        if not isinstance(profiles, list) or len(profiles) <= 1:
+            return
+        updated = [p for p in profiles if p.get("community") != comm_clean]
+        if updated:
+            set_settings({"vpn_profiles": json.dumps(updated, ensure_ascii=False)})
+
+    await asyncio.to_thread(_remove)
+    log_msg(f"Пользователь {user['username']} удалил VPN-профиль ({comm_clean})", "INFO")
+    return RedirectResponse(url="/#settings", status_code=303)
+
+
 # ----------------- User Management Endpoints -----------------
 
 

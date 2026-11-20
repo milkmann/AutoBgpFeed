@@ -366,6 +366,26 @@ def test_api_auth_csrf_rbac_ratelimit_and_backup(isolated_env):
         assert upd_row["community"] == "65000:103"
         assert upd_row["cdn_mode"] == "exact"
 
+        # Add & delete VPN profile via settings endpoints
+        r_vp_add = client.post(
+            "/api/vpn-profiles/add",
+            data={"label": "Germany WG", "name": "wireguard4", "community": "65000:104", "csrf_token": csrf},
+            follow_redirects=False,
+        )
+        assert r_vp_add.status_code == 303
+        profiles_after_add = json.loads(db.get_settings()["vpn_profiles"])
+        assert any(p["name"] == "wireguard4" and p["community"] == "65000:104" for p in profiles_after_add)
+        assert "wireguard4" in client.get("/").text
+
+        r_vp_del = client.post(
+            "/api/vpn-profiles/delete",
+            data={"community": "65000:104", "csrf_token": csrf},
+            follow_redirects=False,
+        )
+        assert r_vp_del.status_code == 303
+        profiles_after_del = json.loads(db.get_settings()["vpn_profiles"])
+        assert all(p["community"] != "65000:104" for p in profiles_after_del)
+
 
 def test_bird_cleanup_stale_peers():
     status_lines = [
