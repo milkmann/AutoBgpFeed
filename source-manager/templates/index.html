@@ -467,6 +467,16 @@
             <div class="col-md-2 d-flex align-items-end">
               <button type="submit" class="btn btn-primary w-100 fw-semibold"><i class="bi bi-plus-lg"></i> Добавить</button>
             </div>
+            <div class="col-12 d-none" id="country-quick-picks">
+              <div class="d-flex flex-wrap gap-2 align-items-center small">
+                <span class="text-secondary">Популярные страны:</span>
+                {% for cc, cname in [('RU','Russia'),('UA','Ukraine'),('PL','Poland'),('DE','Germany'),('NL','Netherlands'),('US','USA'),('GB','UK'),('TR','Turkey'),('KZ','Kazakhstan'),('LT','Lithuania'),('FI','Finland'),('JP','Japan')] %}
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 d-inline-flex align-items-center gap-1" onclick="pickCountry('{{ cc }}', '{{ cname }}')">
+                  <img src="/static/flags/{{ cc|lower }}.svg" width="16" height="11" class="rounded-1" alt=""> {{ cc }}
+                </button>
+                {% endfor %}
+              </div>
+            </div>
           </form>
 
           <div class="collapse mt-3 pt-3 border-top border-secondary border-opacity-25" id="bulkSourcesCollapse">
@@ -526,7 +536,12 @@
                 {% for s in sources %}
                 <tr>
                   <td class="fw-bold text-secondary">{{ loop.index }}</td>
-                  <td class="fw-semibold text-white">{{ s.name }}</td>
+                  <td class="fw-semibold text-white">
+                    {% if s.type == 'COUNTRY' %}
+                      <img src="/static/flags/{{ s.value|lower }}.svg" width="18" height="12" class="me-1 rounded-1 border border-secondary border-opacity-50 align-baseline" alt="" onerror="this.style.display='none'">
+                    {% endif %}
+                    {{ s.name }}
+                  </td>
                   <td><span class="badge {% if s.type == 'COUNTRY' %}badge-ru{% elif s.type in ('DOMAIN', 'DOMAIN_LIST_URL') %}badge-domain{% elif s.type == 'ASN' %}badge-asn{% else %}badge-cidr{% endif %}">{{ s.type }}</span></td>
                   <td><code class="text-info fw-bold">{{ s.value }}</code></td>
                   <td>
@@ -910,14 +925,14 @@
               <pre class="text-info mb-0" style="font-size: 0.85rem; white-space: pre-wrap;" id="code-ros7"><code># 1. Защита от опасных/приватных маршрутов + распределение по VPN-туннелям (RouterOS 7)
 /routing/filter/rule
 add chain=antifilter-in disabled=no rule="if (dst == 0.0.0.0/0 || dst-len &lt; 8 || dst in 10.0.0.0/8 || dst in 172.16.0.0/12 || dst in 192.168.0.0/16 || dst in 100.64.0.0/10 || dst in {{ server_ip }}/32) { reject; }"
-add chain=antifilter-in disabled=no rule="if (bgp-communities includes {{ server_asn }}:102) { set gw wireguard2warp; accept; }"
-add chain=antifilter-in disabled=no rule="if (bgp-communities includes {{ server_asn }}:103) { set gw wireguard5warpzero; accept; }"
+add chain=antifilter-in disabled=no rule="if (bgp-communities includes {{ server_asn }}:102) { set gw wireguard2; accept; }"
+add chain=antifilter-in disabled=no rule="if (bgp-communities includes {{ server_asn }}:103) { set gw wireguard3; accept; }"
 add chain=antifilter-in disabled=no rule="if (bgp-communities includes {{ server_asn }}:1000) { set gw wireguard1; accept; } else { reject; }"
 add chain=discard disabled=no rule="reject;"
 
 # 2. Подключение к AutoBgpFeed (для RouterOS 7.20+ предварительно создайте /routing/bgp/instance)
 /routing/bgp/connection
-add name="freak-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ server_asn }} \
+add name="bgp-feed" remote.address={{ server_ip }} remote.port=179 remote.as={{ server_asn }} \
     as=64999 local.role=ebgp multihop=yes connect=yes listen=no \
     routing-table=main input.filter=antifilter-in input.limit-process-routes-ipv4=25000 output.filter-chain=discard</code></pre>
             </div>
@@ -1199,6 +1214,14 @@ router bgp 64999
         "GOOGLE": "google-non-cloud"
       };
       valEl.placeholder = placeholders[val] || "";
+      const quickPicks = document.getElementById("country-quick-picks");
+      if (quickPicks) quickPicks.classList.toggle("d-none", val !== "COUNTRY");
+    }
+
+    function pickCountry(cc, cname) {
+      document.getElementById("add-form-type").value = "COUNTRY";
+      document.getElementById("add-form-val").value = cc;
+      document.getElementById("add-form-name").value = cname;
     }
 
     let secondsLeft = {{ (settings.update_interval_sec or 900)|int }};
@@ -1456,7 +1479,11 @@ router bgp 64999
         if (data.error) { alert(data.error); return; }
         resCard.classList.remove("d-none");
         document.getElementById("res-target").textContent = data.target;
-        document.getElementById("res-country").textContent = data.country;
+        const ccLower = String(data.country_code || "").toLowerCase();
+        const resCountryEl = document.getElementById("res-country");
+        resCountryEl.innerHTML = (ccLower && /^[a-z]{2}$/.test(ccLower)
+          ? `<img src="/static/flags/${ccLower}.svg" width="22" height="15" class="me-2 rounded-1 border border-secondary border-opacity-50 align-baseline" alt="" onerror="this.style.display='none'">`
+          : "") + escapeHtml(data.country);
         document.getElementById("res-country-code").textContent = `Код: ${data.country_code} • ${data.in_ru_feed ? "В активном фиде" : "Вне активного фида"}`;
         document.getElementById("res-provider").textContent = data.provider;
         document.getElementById("res-isp-detail").textContent = data.is_cdn ? "CDN / Reverse-Proxy" : "Прямой хостинг";
