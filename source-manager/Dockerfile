@@ -16,6 +16,7 @@ files = { \
 }; \
 [urllib.request.urlretrieve(u, p) for p, u in files.items()]"
 
+COPY static /app/static
 COPY app /app/app
 COPY templates /app/templates
 COPY tests /app/tests
