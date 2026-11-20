@@ -417,8 +417,13 @@
       <div id="tab-lists" class="tab-content-section d-none">
         {% if current_user_role == "admin" %}
         <div class="card-custom p-4 mb-4">
-          <h5 class="fw-bold text-white mb-2"><i class="bi bi-lightning-charge-fill text-warning"></i> Smart Add (Добавление источника)</h5>
-          <p class="text-secondary small mb-3">Поддерживаются страны, домены (Smart-DNS с кешем ротации), ASN, IP/CIDR, внешние TXT-списки и Google без Google Cloud.</p>
+          <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <h5 class="fw-bold text-white mb-0"><i class="bi bi-lightning-charge-fill text-warning"></i> Smart Add (Добавление источника)</h5>
+            <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="collapse" data-bs-target="#bulkSourcesCollapse">
+              <i class="bi bi-list-check"></i> Массовое добавление (Bulk)
+            </button>
+          </div>
+          <p class="text-secondary small mb-3">Поддерживаются страны, домены (Smart-DNS с кешем ротации), ASN, IP/CIDR, внешние списки IP и доменов по URL, а также Google без Google Cloud.</p>
           <form action="/api/sources/add" method="post" class="row g-3">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="col-md-3">
@@ -430,9 +435,10 @@
               <select name="source_type" id="add-form-type" class="form-select" onchange="updateFormPlaceholders()">
                 <option value="COUNTRY">COUNTRY (Вся страна: UA, PL, RU...)</option>
                 <option value="DOMAIN" selected>DOMAIN (Smart-DNS A-записи)</option>
+                <option value="DOMAIN_LIST_URL">DOMAIN_LIST_URL (TXT-список доменов по URL)</option>
                 <option value="ASN">ASN (Все префиксы AS)</option>
                 <option value="PREFIX">IP / CIDR (Ручная подсеть)</option>
-                <option value="EXTERNAL_URL">EXTERNAL_URL (HTTP/HTTPS TXT список)</option>
+                <option value="EXTERNAL_URL">EXTERNAL_URL (TXT-список IP/CIDR по URL)</option>
                 <option value="GOOGLE">GOOGLE (Google без Google Cloud)</option>
               </select>
             </div>
@@ -442,7 +448,7 @@
             </div>
             <div class="col-md-3">
               <label class="form-label text-secondary small fw-semibold">Целевой VPN / Community</label>
-              <select class="form-select" id="add-form-vpn" onchange="applyVpnPreset(this)">
+              <select class="form-select" id="add-form-vpn" onchange="applyVpnPreset(this, 'add-form-gateway', 'add-form-community')">
                 {% for vp in vpn_profiles %}
                   <option value="{{ vp.name }}|{{ vp.community }}">{{ vp.label }} ({{ vp.community }})</option>
                 {% endfor %}
@@ -462,6 +468,39 @@
               <button type="submit" class="btn btn-primary w-100 fw-semibold"><i class="bi bi-plus-lg"></i> Добавить</button>
             </div>
           </form>
+
+          <div class="collapse mt-3 pt-3 border-top border-secondary border-opacity-25" id="bulkSourcesCollapse">
+            <h6 class="fw-semibold text-info mb-2"><i class="bi bi-collection"></i> Массовое добавление источников (по одному на строку, опционально <code>Название | значение</code>)</h6>
+            <form action="/api/sources/bulk" method="post" class="row g-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="col-md-3">
+                <select name="source_type" class="form-select form-select-sm mb-2">
+                  <option value="DOMAIN" selected>DOMAIN</option>
+                  <option value="PREFIX">PREFIX (IP/CIDR)</option>
+                  <option value="ASN">ASN</option>
+                  <option value="COUNTRY">COUNTRY</option>
+                </select>
+                <select class="form-select form-select-sm mb-2" onchange="applyVpnPreset(this, 'bulk-form-gateway', 'bulk-form-community')">
+                  {% for vp in vpn_profiles %}
+                    <option value="{{ vp.name }}|{{ vp.community }}">{{ vp.label }}</option>
+                  {% endfor %}
+                </select>
+                <input type="hidden" name="gateway" id="bulk-form-gateway" value="wireguard1">
+                <input type="hidden" name="community" id="bulk-form-community" value="65000:1000">
+                <select name="cdn_mode" class="form-select form-select-sm">
+                  <option value="auto" selected>CDN: Auto</option>
+                  <option value="exact">CDN: Exact /32</option>
+                  <option value="subnet24">CDN: /24</option>
+                </select>
+              </div>
+              <div class="col-md-7">
+                <textarea name="entries" rows="4" class="form-control form-control-sm font-monospace" placeholder="youtube.com&#10;ChatGPT | chatgpt.com&#10;openai.com" required></textarea>
+              </div>
+              <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-info text-dark btn-sm w-100 fw-semibold">Добавить списком</button>
+              </div>
+            </form>
+          </div>
         </div>
         {% endif %}
 
@@ -488,7 +527,7 @@
                 <tr>
                   <td class="fw-bold text-secondary">{{ loop.index }}</td>
                   <td class="fw-semibold text-white">{{ s.name }}</td>
-                  <td><span class="badge {% if s.type == 'COUNTRY' %}badge-ru{% elif s.type == 'DOMAIN' %}badge-domain{% elif s.type == 'ASN' %}badge-asn{% else %}badge-cidr{% endif %}">{{ s.type }}</span></td>
+                  <td><span class="badge {% if s.type == 'COUNTRY' %}badge-ru{% elif s.type in ('DOMAIN', 'DOMAIN_LIST_URL') %}badge-domain{% elif s.type == 'ASN' %}badge-asn{% else %}badge-cidr{% endif %}">{{ s.type }}</span></td>
                   <td><code class="text-info fw-bold">{{ s.value }}</code></td>
                   <td>
                     <button type="button" class="btn btn-sm btn-outline-info py-0 px-2 fw-semibold btn-inspect-source" data-source-id="{{ s.id }}" data-source-name="{{ s.name }}">
@@ -512,8 +551,17 @@
                     {% endif %}
                   </td>
                   {% if current_user_role == "admin" %}
-                  <td class="text-end">
-                    <form action="/api/sources/{{ s.id }}/toggle" method="post" class="d-inline">
+                  <td class="text-end text-nowrap">
+                    <button type="button" class="btn btn-sm btn-outline-info py-1 px-2 btn-edit-source"
+                      title="Редактировать источник"
+                      data-id="{{ s.id }}"
+                      data-name="{{ s.name }}"
+                      data-type="{{ s.type }}"
+                      data-value="{{ s.value }}"
+                      data-gateway="{{ s.gateway or 'wireguard1' }}"
+                      data-community="{{ s.community }}"
+                      data-cdn-mode="{{ s.cdn_mode or 'auto' }}">✎</button>
+                    <form action="/api/sources/{{ s.id }}/toggle" method="post" class="d-inline ms-1">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                       <button type="submit" class="btn btn-sm btn-outline-warning py-1 px-2">{% if s.enabled %}Откл{% else %}Вкл{% endif %}</button>
                     </form>
@@ -532,9 +580,14 @@
 
         <!-- Exclusions Box -->
         <div class="card-custom p-4" id="exclusions">
-          <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
             <h5 class="fw-bold text-white mb-0"><i class="bi bi-slash-circle text-danger"></i> Правила исключения (Exclusions)</h5>
-            <span class="small text-secondary">Вычитаются из ВСЕХ источников (включая RU-пул и большие CIDR)</span>
+            <div class="d-flex align-items-center gap-2">
+              <span class="small text-secondary">Вычитаются из ВСЕХ источников (включая RU-пул и большие CIDR)</span>
+              {% if current_user_role == "admin" %}
+              <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#bulkExclCollapse">+ Массово</button>
+              {% endif %}
+            </div>
           </div>
           {% if current_user_role == "admin" %}
           <form action="/api/exclusions/add" method="post" class="row g-2 mb-3">
@@ -555,6 +608,23 @@
               <button type="submit" class="btn btn-sm btn-outline-danger w-100">+ Исключить</button>
             </div>
           </form>
+          <div class="collapse mb-3 p-2 bg-dark bg-opacity-50 rounded border border-danger border-opacity-25" id="bulkExclCollapse">
+            <form action="/api/exclusions/bulk" method="post" class="row g-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="col-md-2">
+                <select name="exc_type" class="form-select form-select-sm">
+                  <option value="PREFIX" selected>IP / CIDR</option>
+                  <option value="DOMAIN">Домен (DNS)</option>
+                </select>
+              </div>
+              <div class="col-md-8">
+                <textarea name="entries" rows="3" class="form-control form-control-sm font-monospace" placeholder="По одной записи на строку (или Имя | значение)&#10;Bank | 195.0.0.10/32&#10;gosuslugi.ru" required></textarea>
+              </div>
+              <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-sm btn-danger w-100">Исключить списком</button>
+              </div>
+            </form>
+          </div>
           {% endif %}
 
           {% if exclusions %}
@@ -939,6 +1009,71 @@ router bgp 64999
     </div>
   </div>
 
+  <!-- Edit Source Modal -->
+  <div class="modal fade" id="editSourceModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="edit-source-form" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="modal-header border-secondary border-opacity-25">
+            <h5 class="modal-title fw-bold text-info"><i class="bi bi-pencil-square"></i> Редактировать источник</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body row g-3">
+            <div class="col-12">
+              <label class="form-label text-secondary small">Название</label>
+              <input type="text" name="name" id="edit-src-name" class="form-control" required>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label text-secondary small">Тип</label>
+              <select name="source_type" id="edit-src-type" class="form-select">
+                <option value="COUNTRY">COUNTRY</option>
+                <option value="DOMAIN">DOMAIN</option>
+                <option value="DOMAIN_LIST_URL">DOMAIN_LIST_URL</option>
+                <option value="ASN">ASN</option>
+                <option value="PREFIX">PREFIX</option>
+                <option value="EXTERNAL_URL">EXTERNAL_URL</option>
+                <option value="GOOGLE">GOOGLE</option>
+              </select>
+            </div>
+            <div class="col-md-7">
+              <label class="form-label text-secondary small">Значение</label>
+              <input type="text" name="value" id="edit-src-value" class="form-control" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label text-secondary small">Профиль VPN (быстрый выбор)</label>
+              <select class="form-select form-select-sm" id="edit-src-vpn-preset" onchange="applyVpnPreset(this, 'edit-src-gateway', 'edit-src-community')">
+                {% for vp in vpn_profiles %}
+                  <option value="{{ vp.name }}|{{ vp.community }}">{{ vp.label }} ({{ vp.community }})</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label text-secondary small">VPN Gateway</label>
+              <input type="text" name="gateway" id="edit-src-gateway" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label text-secondary small">Community</label>
+              <input type="text" name="community" id="edit-src-community" class="form-control form-control-sm" pattern="[0-9]+:[0-9]+" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label text-secondary small">CDN Mode</label>
+              <select name="cdn_mode" id="edit-src-cdn" class="form-select form-select-sm">
+                <option value="auto">auto</option>
+                <option value="exact">exact (/32)</option>
+                <option value="subnet24">subnet24</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer border-secondary border-opacity-25">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="submit" class="btn btn-info text-dark fw-semibold">Сохранить и пересобрать</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Preview Diff Modal -->
   <div class="modal fade" id="previewDiffModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -978,10 +1113,10 @@ router bgp 64999
       return (s.startsWith("https://") || s.startsWith("http://")) ? s : "#";
     }
 
-    function applyVpnPreset(sel) {
+    function applyVpnPreset(sel, gwId = "add-form-gateway", commId = "add-form-community") {
       const [gw, comm] = String(sel.value || "wireguard1|65000:1000").split("|");
-      const gwEl = document.getElementById("add-form-gateway");
-      const commEl = document.getElementById("add-form-community");
+      const gwEl = document.getElementById(gwId);
+      const commEl = document.getElementById(commId);
       if (gwEl) gwEl.value = gw || "wireguard1";
       if (commEl) commEl.value = comm || "";
     }
@@ -989,6 +1124,19 @@ router bgp 64999
     document.addEventListener("DOMContentLoaded", () => {
       const vpnSel = document.getElementById("add-form-vpn");
       if (vpnSel) applyVpnPreset(vpnSel);
+
+      document.querySelectorAll(".btn-edit-source").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.getElementById("edit-source-form").action = `/api/sources/${btn.dataset.id}/update`;
+          document.getElementById("edit-src-name").value = btn.dataset.name || "";
+          document.getElementById("edit-src-type").value = btn.dataset.type || "DOMAIN";
+          document.getElementById("edit-src-value").value = btn.dataset.value || "";
+          document.getElementById("edit-src-gateway").value = btn.dataset.gateway || "wireguard1";
+          document.getElementById("edit-src-community").value = btn.dataset.community || "65000:1000";
+          document.getElementById("edit-src-cdn").value = btn.dataset.cdnMode || "auto";
+          new bootstrap.Modal(document.getElementById("editSourceModal")).show();
+        });
+      });
 
       document.querySelectorAll(".nav-link-custom").forEach(link => {
         link.addEventListener("click", function(e) {
@@ -1044,6 +1192,7 @@ router bgp 64999
       const placeholders = {
         "COUNTRY": "UA, PL, KZ, US, RU...",
         "DOMAIN": "youtube.com, rutracker.org...",
+        "DOMAIN_LIST_URL": "https://raw.githubusercontent.com/.../domains.txt",
         "ASN": "AS15169, AS13335...",
         "PREFIX": "1.2.3.0/24",
         "EXTERNAL_URL": "https://example.com/subnets.txt",
