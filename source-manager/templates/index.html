@@ -874,6 +874,58 @@
         </div>
 
         <!-- Revisions History -->
+        {% if current_user_role == "admin" %}
+        <div class="card-custom p-4 mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <div>
+              <h5 class="fw-bold text-white mb-1"><i class="bi bi-diagram-2-fill text-success"></i> Профили VPN (BGP Communities)</h5>
+              <div class="text-secondary small">Список туннелей для выпадающего меню «Целевой VPN / Community». Не забудьте добавить соответствующее правило в фильтр MikroTik ниже.</div>
+            </div>
+          </div>
+          <div class="table-responsive mb-3">
+            <table class="table table-custom table-sm align-middle">
+              <thead><tr><th>Название</th><th>Интерфейс (Gateway)</th><th>BGP Community</th><th>Правило для MikroTik (RouterOS 7)</th><th class="text-end">Удалить</th></tr></thead>
+              <tbody>
+                {% for vp in vpn_profiles %}
+                <tr>
+                  <td class="fw-semibold text-white">{{ vp.label }}</td>
+                  <td><span class="badge bg-success bg-opacity-25 text-success border border-success">{{ vp.name }}</span></td>
+                  <td><code class="text-info">{{ vp.community }}</code></td>
+                  <td><code class="small text-secondary">/routing/filter/rule add chain=antifilter-in rule="if (bgp-communities includes {{ vp.community }}) { set gw {{ vp.name }}; accept; }"</code></td>
+                  <td class="text-end">
+                    {% if vp.community != (server_asn|string ~ ':1000') %}
+                    <form action="/api/vpn-profiles/delete" method="post" class="d-inline" onsubmit="return confirm('Удалить профиль {{ vp.label }}?')">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <input type="hidden" name="community" value="{{ vp.community }}">
+                      <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">✕</button>
+                    </form>
+                    {% else %}
+                    <span class="badge bg-secondary bg-opacity-25 text-secondary">Базовый</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <form action="/api/vpn-profiles/add" method="post" class="row g-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="col-md-4">
+              <input type="text" name="label" class="form-control form-control-sm" placeholder="Название (напр. Germany WG)" required>
+            </div>
+            <div class="col-md-3">
+              <input type="text" name="name" class="form-control form-control-sm" placeholder="Интерфейс (напр. wireguard4)" required>
+            </div>
+            <div class="col-md-3">
+              <input type="text" name="community" class="form-control form-control-sm" value="{{ server_asn }}:{{ 101 + vpn_profiles|length }}" pattern="[0-9]+:[0-9]+" placeholder="65000:104" required>
+            </div>
+            <div class="col-md-2">
+              <button type="submit" class="btn btn-success btn-sm w-100 fw-semibold">+ Добавить VPN</button>
+            </div>
+          </form>
+        </div>
+        {% endif %}
+
         {% if revisions %}
         <div class="card-custom p-4 mb-4">
           <h5 class="fw-bold text-white mb-3"><i class="bi bi-clock-history text-info"></i> История ревизий конфигурации</h5>
@@ -925,9 +977,8 @@
               <pre class="text-info mb-0" style="font-size: 0.85rem; white-space: pre-wrap;" id="code-ros7"><code># 1. Защита от опасных/приватных маршрутов + распределение по VPN-туннелям (RouterOS 7)
 /routing/filter/rule
 add chain=antifilter-in disabled=no rule="if (dst == 0.0.0.0/0 || dst-len &lt; 8 || dst in 10.0.0.0/8 || dst in 172.16.0.0/12 || dst in 192.168.0.0/16 || dst in 100.64.0.0/10 || dst in {{ server_ip }}/32) { reject; }"
-add chain=antifilter-in disabled=no rule="if (bgp-communities includes {{ server_asn }}:102) { set gw wireguard2; accept; }"
-add chain=antifilter-in disabled=no rule="if (bgp-communities includes {{ server_asn }}:103) { set gw wireguard3; accept; }"
-add chain=antifilter-in disabled=no rule="if (bgp-communities includes {{ server_asn }}:1000) { set gw wireguard1; accept; } else { reject; }"
+{% for vp in vpn_profiles if vp.community != (server_asn|string ~ ':1000') %}add chain=antifilter-in disabled=no rule="if (bgp-communities includes {{ vp.community }}) { set gw {{ vp.name }}; accept; }"
+{% endfor %}add chain=antifilter-in disabled=no rule="if (bgp-communities includes {{ server_asn }}:1000) { set gw wireguard1; accept; } else { reject; }"
 add chain=discard disabled=no rule="reject;"
 
 # 2. Подключение к AutoBgpFeed (для RouterOS 7.20+ предварительно создайте /routing/bgp/instance)
